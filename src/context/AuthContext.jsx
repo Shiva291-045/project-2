@@ -1,11 +1,15 @@
-/**
- * Authentication Context
- * Manages app-wide auth state and provides auth methods
- * Handles persistent login, loading states, and error management
- */
-
 import React, { createContext, useState, useCallback, useEffect } from "react";
-import authService from "../services/authService";
+import { auth, db } from "../config/firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  updateProfile as fbUpdateProfile,
+} from "firebase/auth";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import toast from "react-hot-toast";
 
 export const AuthContext = createContext();
 
@@ -16,221 +20,117 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  /**
-   * Initialize auth state from Firebase
-   */
+  // ── Firebase auth listener ──────────────────────────────────────────
   useEffect(() => {
-    let unsubscribe;
-
-    const initAuth = async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       try {
-        setLoading(true);
-        
-        // Subscribe to auth state changes
-        unsubscribe = authService.onAuthStateChanged(async (firebaseUser) => {
-          if (firebaseUser) {
-            setUser(firebaseUser);
-            setIsAuthenticated(true);
-
-            // Fetch user profile from Firestore
-            const profile = await authService.getUserProfile(firebaseUser.uid);
-            setUserProfile(profile || {});
-            setError(null);
-          } else {
-            setUser(null);
-            setUserProfile(null);
-            setIsAuthenticated(false);
-            setError(null);
+        if (fbUser) {
+          setUser(fbUser);
+          setIsAuthenticated(true);
+          try {
+            const snap = await getDoc(doc(db, "users", fbUser.uid));
+            setUserProfile(snap.exists() ? snap.data() : { name: fbUser.displayName, email: fbUser.email });
+          } catch {
+            setUserProfile({ name: fbUser.displayName, email: fbUser.email });
           }
-
-          setLoading(false);
-        });
-      } catch (err) {
-        console.error("Auth initialization error:", err);
-        setError("Failed to initialize authentication");
-        setLoading(false);
-      }
-    };
-
-    initAuth();
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
-  }, []);
-
-  /**
-   * Register user
-   */
-  const register = useCallback(
-    async (email, password, displayName) => {
-      try {
-        setError(null);
-        setLoading(true);
-
-        const result = await authService.register(
-          email,
-          password,
-          displayName
-        );
-
-        if (!result.success) {
-          setError(result.message);
-          return result;
+        } else {
+          setUser(null);
+          setUserProfile(null);
+          setIsAuthenticated(false);
         }
-
-        // User will be set by onAuthStateChanged listener
-        return result;
-      } catch (err) {
-        const errorMsg = "Registration failed. Please try again.";
-        setError(errorMsg);
-        console.error("Registration error:", err);
-        return { success: false, message: errorMsg };
       } finally {
         setLoading(false);
       }
-    },
-    []
-  );
+    });
+    return unsubscribe;
+  }, []);
 
-  /**
-   * Login user
-   */
+  // ── Register ────────────────────────────────────────────────────────
+  const register = useCallback(async (email, password, displayName) => {
+    try {
+      setError(null);
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      await fbUpdateProfile(result.user, { displayName });
+      try {
+        await setDoc(doc(db, "users", result.user.uid), {
+          uid: result.user.uid, name: displayName, email,
+          createdAt: new Date().toISOString(), xp: 0, streak: 0,
+        });
+      } catch {}
+      toast.success("Account created! Welcome to PrepAI 🎉");
+      return { success: true };
+    } catch (err) {
+      const msg = err.code === "auth/email-already-in-use"
+        ? "Email already registered. Please log in."
+        : err.message || "Registration failed";
+      setError(msg);
+      toast.error(msg);
+      return { success: false, message: msg };
+    }
+  }, []);
+
+  // ── Login ───────────────────────────────────────────────────────────
   const login = useCallback(async (email, password) => {
     try {
       setError(null);
-      setLoading(true);
-
-      const result = await authService.login(email, password);
-
-      if (!result.success) {
-        setError(result.message);
-        return result;
-      }
-
-      // User will be set by onAuthStateChanged listener
-      return result;
+      await signInWithEmailAndPassword(auth, email, password);
+      toast.success("Welcome back! 👋");
+      return { success: true };
     } catch (err) {
-      const errorMsg = "Login failed. Please try again.";
-      setError(errorMsg);
-      console.error("Login error:", err);
-      return { success: false, message: errorMsg };
-    } finally {
-      setLoading(false);
+      const msg = err.code === "auth/user-not-found" || err.code === "auth/wrong-password"
+        ? "Invalid email or password"
+        : err.message || "Login failed";
+      setError(msg);
+      toast.error(msg);
+      return { success: false, message: msg };
     }
   }, []);
 
-  /**
-   * Logout user
-   */
+  // ── Logout ──────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
     try {
-      setError(null);
-      setLoading(true);
-
-      const result = await authService.logout();
-
-      if (!result.success) {
-        setError("Logout failed");
-        return result;
-      }
-
-      setUser(null);
-      setUserProfile(null);
-      setIsAuthenticated(false);
-      return result;
+      await signOut(auth);
+      toast.success("Logged out");
+      return { success: true };
     } catch (err) {
-      const errorMsg = "Logout failed. Please try again.";
-      setError(errorMsg);
-      console.error("Logout error:", err);
-      return { success: false, message: errorMsg };
-    } finally {
-      setLoading(false);
+      toast.error("Logout failed");
+      return { success: false };
     }
   }, []);
 
-  /**
-   * Reset password
-   */
+  // ── Reset password ──────────────────────────────────────────────────
   const resetPassword = useCallback(async (email) => {
     try {
-      setError(null);
-      setLoading(true);
-
-      const result = await authService.resetPassword(email);
-
-      if (!result.success) {
-        setError(result.message);
-        return result;
-      }
-
-      return result;
+      await sendPasswordResetEmail(auth, email);
+      toast.success("Password reset email sent!");
+      return { success: true };
     } catch (err) {
-      const errorMsg = "Password reset failed. Please try again.";
-      setError(errorMsg);
-      console.error("Reset password error:", err);
-      return { success: false, message: errorMsg };
-    } finally {
-      setLoading(false);
+      toast.error(err.message || "Failed to send reset email");
+      return { success: false };
     }
   }, []);
 
-  /**
-   * Update user profile
-   */
+  // ── Update profile ──────────────────────────────────────────────────
   const updateProfile = useCallback(async (updates) => {
+    if (!user) return { success: false };
     try {
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      setError(null);
-
-      const result = await authService.updateUserProfile(user.uid, updates);
-
-      if (result.success) {
-        setUserProfile((prev) => ({ ...prev, ...updates }));
-      } else {
-        setError(result.message);
-      }
-
-      return result;
+      await setDoc(doc(db, "users", user.uid), updates, { merge: true });
+      setUserProfile((p) => ({ ...p, ...updates }));
+      toast.success("Profile updated!");
+      return { success: true };
     } catch (err) {
-      const errorMsg = "Failed to update profile";
-      setError(errorMsg);
-      console.error("Update profile error:", err);
-      return { success: false, message: errorMsg };
+      toast.error("Failed to update profile");
+      return { success: false };
     }
   }, [user]);
 
-  /**
-   * Clear error
-   */
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  const value = {
-    // State
-    user,
-    userProfile,
-    loading,
-    error,
-    isAuthenticated,
-
-    // Methods
-    register,
-    login,
-    logout,
-    resetPassword,
-    updateProfile,
-    clearError,
-  };
+  const clearError = useCallback(() => setError(null), []);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user, userProfile, loading, error, isAuthenticated,
+      register, login, logout, resetPassword, updateProfile, clearError,
+    }}>
       {children}
     </AuthContext.Provider>
   );

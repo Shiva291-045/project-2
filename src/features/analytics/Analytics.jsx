@@ -1,77 +1,65 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { Header } from "../../components/layout/Header";
 import { Sidebar } from "../../components/layout/Sidebar";
-import { Card, Container, Spinner, Badge } from "../../components/ui";
+import { Card, Container, Badge } from "../../components/ui";
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, RadarChart, Radar,
+  PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import apiClient from "../../services/apiClient";
-import { TrendingUp, Target, Zap } from "lucide-react";
+import { TrendingUp, Brain, BookOpen, Clock, Award, Zap } from "lucide-react";
+
+const INTERVIEW_HISTORY_KEY = "prepai_interview_history";
+const SOLVED_KEY = "prepai_solved_problems";
+
+const getHistory = () => {
+  try { return JSON.parse(localStorage.getItem(INTERVIEW_HISTORY_KEY) || "[]"); } catch { return []; }
+};
+const getSolvedIds = () => {
+  try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]"); } catch { return []; }
+};
 
 export const Analytics = () => {
-  const [analytics, setAnalytics] = useState(null);
-  const [topicData, setTopicData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const history = useMemo(getHistory, []);
+  const solvedIds = useMemo(getSolvedIds, []);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [analyticsRes, topicsRes] = await Promise.all([
-          apiClient.get("/api/analytics"),
-          apiClient.get("/api/analytics/topics"),
-        ]);
+  const scores = history.flatMap((s) => s.scores || []);
+  const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
+  const bestScore = scores.length ? Math.round(Math.max(...scores) * 10) : 0;
 
-        setAnalytics(analyticsRes.data.data);
-        setTopicData(topicsRes.data.data);
-      } catch (error) {
-        console.error("Error fetching analytics:", error);
-      } finally {
-        setLoading(false);
-      }
+  // Score over time
+  const scoreOverTime = history.slice(0, 10).reverse().map((s, i) => {
+    const sc = s.scores || [];
+    return {
+      session: `#${i + 1}`,
+      score: sc.length ? Math.round(sc.reduce((a, b) => a + b, 0) / sc.length * 10) : 0,
+      date: s.completedAt ? new Date(s.completedAt).toLocaleDateString("en", { month: "short", day: "numeric" }) : "",
     };
+  });
 
-    fetchData();
-  }, []);
+  // Mode breakdown
+  const modeCounts = {};
+  history.forEach((s) => { modeCounts[s.mode] = (modeCounts[s.mode] || 0) + 1; });
+  const modeData = Object.entries(modeCounts).map(([name, value]) => ({ name, value }));
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  // Difficulty breakdown
+  const diffData = (() => {
+    const d = { Easy: 0, Medium: 0, Hard: 0 };
+    history.forEach((s) => { if (s.difficulty) d[s.difficulty] = (d[s.difficulty] || 0) + 1; });
+    return Object.entries(d).map(([name, value]) => ({ name, value }));
+  })();
 
-  const scoreData = analytics?.scoreByDate || [];
-  const interviewTypes = Object.entries(analytics?.interviewsByType || {}).map(
-    ([name, count]) => ({
-      name,
-      value: count,
-    })
-  );
+  // Radar data for skill areas
+  const radarData = [
+    { subject: "Technical", score: history.filter(s => s.mode === "technical").length > 0 ? avgScore : 40 },
+    { subject: "Behavioral", score: history.filter(s => s.mode === "behavioral").length > 0 ? avgScore + 5 : 50 },
+    { subject: "Communication", score: Math.min(avgScore + 10, 95) },
+    { subject: "HR", score: history.filter(s => s.mode === "hr").length > 0 ? avgScore - 5 : 35 },
+    { subject: "Problem Solving", score: solvedIds.length > 10 ? 70 : 40 },
+    { subject: "Confidence", score: Math.min(history.length * 8, 90) },
+  ];
 
-  const COLORS = ["#9333ea", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"];
-
-  const topicRadarData = Object.entries(topicData || {}).map(([topic, score]) => ({
-    name: topic,
-    score: Math.min(score / 100, 100),
-  }));
+  const totalDuration = history.reduce((a, s) => a + (s.duration || 0), 0);
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -80,224 +68,158 @@ export const Analytics = () => {
         <Header />
         <main className="flex-1 overflow-auto">
           <Container className="py-8">
-            {/* Header */}
             <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-                Analytics Dashboard
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Track your interview preparation progress and identify areas for improvement
-              </p>
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Analytics</h1>
+              <p className="text-gray-500 dark:text-gray-400">Track your interview preparation progress</p>
             </div>
 
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Total Interviews
-                    </p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {analytics?.totalInterviews || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 text-purple-600" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Problems Solved
-                    </p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {analytics?.totalProblems || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-cyan-100 dark:bg-cyan-900/20 rounded-lg flex items-center justify-center">
-                    <Target className="w-6 h-6 text-cyan-600" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Success Rate
-                    </p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {analytics?.totalProblems > 0
-                        ? Math.round(
-                            (analytics?.passedProblems /
-                              analytics?.totalProblems) *
-                              100
-                          )
-                        : 0}
-                      %
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
-                    <Zap className="w-6 h-6 text-green-600" />
-                  </div>
-                </div>
-              </Card>
+            {/* Summary stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {[
+                { label: "Total Interviews", value: history.length, icon: Brain, color: "purple" },
+                { label: "Average Score", value: `${avgScore}%`, icon: TrendingUp, color: "cyan" },
+                { label: "Problems Solved", value: solvedIds.length, icon: BookOpen, color: "green" },
+                { label: "Practice Time", value: `${Math.round(totalDuration / 60)}m`, icon: Clock, color: "orange" },
+              ].map((s) => {
+                const Icon = s.icon;
+                return (
+                  <Card key={s.label}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</p>
+                      <Icon className={`w-5 h-5 text-${s.color}-600`} />
+                    </div>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{s.value}</p>
+                  </Card>
+                );
+              })}
             </div>
 
-            {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* Score Trend */}
+            {/* Charts row 1 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <Card>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Interview Score Trend
-                </h2>
-                {scoreData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={scoreData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="date" stroke="#9ca3af" />
-                      <YAxis stroke="#9ca3af" />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1f2937",
-                          border: "none",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#9333ea"
-                        dot={{ fill: "#9333ea" }}
-                      />
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Score Progression</h2>
+                {scoreOverTime.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={scoreOverTime}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="date" stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <YAxis domain={[0, 100]} stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "none", borderRadius: 8, color: "#fff" }} />
+                      <Line type="monotone" dataKey="score" stroke="#9333ea" strokeWidth={2} dot={{ fill: "#9333ea", r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500">
-                    No data available
+                  <div className="h-56 flex items-center justify-center text-gray-400">
+                    <div className="text-center">
+                      <Brain className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>Complete interviews to see your progress</p>
+                    </div>
                   </div>
                 )}
               </Card>
 
-              {/* Interview Types Distribution */}
               <Card>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Interview Type Distribution
-                </h2>
-                {interviewTypes.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={interviewTypes}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {interviewTypes.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Skill Radar</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#374151" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#9ca3af", fontSize: 9 }} />
+                    <Radar name="Score" dataKey="score" stroke="#9333ea" fill="#9333ea" fillOpacity={0.3} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </Card>
+            </div>
+
+            {/* Charts row 2 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <Card>
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Interview Modes</h2>
+                {modeData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={modeData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="name" stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "none", borderRadius: 8, color: "#fff" }} />
+                      <Bar dataKey="value" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500">
-                    No data available
-                  </div>
+                  <div className="h-44 flex items-center justify-center text-gray-400">No data yet</div>
+                )}
+              </Card>
+
+              <Card>
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Difficulty Breakdown</h2>
+                {diffData.some(d => d.value > 0) ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={diffData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="name" stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#6b7280" tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "none", borderRadius: 8, color: "#fff" }} />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                        {diffData.map((d, i) => (
+                          <rect key={i} fill={d.name === "Easy" ? "#22c55e" : d.name === "Medium" ? "#eab308" : "#ef4444"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-44 flex items-center justify-center text-gray-400">No data yet</div>
                 )}
               </Card>
             </div>
 
-            {/* Topic Radar Chart */}
-            <Card>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Topic-wise Performance
-              </h2>
-              {topicRadarData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={400}>
-                  <RadarChart data={topicRadarData}>
-                    <PolarGrid stroke="#e5e7eb" />
-                    <PolarAngleAxis dataKey="name" stroke="#9ca3af" />
-                    <PolarRadiusAxis stroke="#9ca3af" />
-                    <Radar
-                      name="Score"
-                      dataKey="score"
-                      stroke="#9333ea"
-                      fill="#9333ea"
-                      fillOpacity={0.6}
-                    />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500">
-                  No data available
+            {/* Recent sessions table */}
+            {history.length > 0 && (
+              <Card>
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-500" /> Session History
+                </h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-gray-700">
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Mode</th>
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Role</th>
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Difficulty</th>
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Score</th>
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Duration</th>
+                        <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.slice(0, 10).map((s, i) => {
+                        const sc = s.scores || [];
+                        const avg = sc.length ? Math.round(sc.reduce((a, b) => a + b, 0) / sc.length * 10) : null;
+                        return (
+                          <tr key={i} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                            <td className="py-2 px-3 capitalize text-gray-900 dark:text-white">{s.mode}</td>
+                            <td className="py-2 px-3 text-gray-600 dark:text-gray-400">{s.role || "—"}</td>
+                            <td className="py-2 px-3">
+                              <Badge variant={s.difficulty === "Easy" ? "success" : s.difficulty === "Medium" ? "warning" : "danger"} className="text-xs">
+                                {s.difficulty || "—"}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-3 font-semibold">
+                              {avg != null ? <span className={avg >= 70 ? "text-green-500" : avg >= 50 ? "text-yellow-500" : "text-red-500"}>{avg}%</span> : "—"}
+                            </td>
+                            <td className="py-2 px-3 text-gray-600 dark:text-gray-400">
+                              {s.duration ? `${Math.round(s.duration / 60)}m` : "—"}
+                            </td>
+                            <td className="py-2 px-3 text-gray-500 dark:text-gray-400 text-xs">
+                              {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </Card>
-
-            {/* Recommendations */}
-            <Card className="mt-8">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                📊 Performance Insights
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
-                    Strengths
-                  </h3>
-                  <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
-                    <li>✅ Strong in Data Structures and Algorithms</li>
-                    <li>✅ Good communication and clarity</li>
-                    <li>✅ Consistent performance across interviews</li>
-                  </ul>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-900/10 rounded-lg border border-orange-200 dark:border-orange-800">
-                  <h3 className="font-semibold text-orange-900 dark:text-orange-300 mb-2">
-                    Areas to Improve
-                  </h3>
-                  <ul className="text-sm text-orange-800 dark:text-orange-400 space-y-1">
-                    <li>⚠️ System Design concepts need more practice</li>
-                    <li>⚠️ Database optimization techniques</li>
-                    <li>⚠️ Behavioral interview preparation</li>
-                  </ul>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10 rounded-lg border border-green-200 dark:border-green-800">
-                  <h3 className="font-semibold text-green-900 dark:text-green-300 mb-2">
-                    Recommended Focus
-                  </h3>
-                  <ul className="text-sm text-green-800 dark:text-green-400 space-y-1">
-                    <li>🎯 System Design interviews (3-4x per week)</li>
-                    <li>🎯 Database optimization problems</li>
-                    <li>🎯 Mock HR interviews</li>
-                  </ul>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-900/10 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <h3 className="font-semibold text-purple-900 dark:text-purple-300 mb-2">
-                    Next Steps
-                  </h3>
-                  <ul className="text-sm text-purple-800 dark:text-purple-400 space-y-1">
-                    <li>📈 Complete 5 more medium-level problems</li>
-                    <li>📈 Review System Design fundamentals</li>
-                    <li>📈 Schedule mock interviews weekly</li>
-                  </ul>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </Container>
         </main>
       </div>

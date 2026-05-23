@@ -1,101 +1,83 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Card, Container, Spinner, Badge, Button } from "../../components/ui";
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { Card, Container, Badge, Button } from "../../components/ui";
 import { Header } from "../../components/layout/Header";
 import { Sidebar } from "../../components/layout/Sidebar";
 import { useAuth } from "../../hooks/useAuth";
-import toast from "react-hot-toast";
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  TrendingUp,
-  Target,
-  Flame,
-  BookOpen,
-  Brain,
-  Award,
-  Clock,
+  TrendingUp, Target, Flame, BookOpen, Brain, Award,
+  Clock, Code2, FileText, MessageSquare, ChevronRight,
+  CheckCircle, Calendar, Zap,
 } from "lucide-react";
-import apiClient from "../../services/apiClient";
+
+const INTERVIEW_HISTORY_KEY = "prepai_interview_history";
+const SOLVED_KEY = "prepai_solved_problems";
+
+const getInterviewHistory = () => {
+  try { return JSON.parse(localStorage.getItem(INTERVIEW_HISTORY_KEY) || "[]"); } catch { return []; }
+};
+const getSolvedCount = () => {
+  try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]").length; } catch { return 0; }
+};
+
+const QUICK_ACTIONS = [
+  { label: "Start Interview", icon: Brain, href: "/interview", color: "from-purple-600 to-cyan-600", desc: "AI mock interview" },
+  { label: "Coding Practice", icon: Code2, href: "/coding",    color: "from-blue-600 to-indigo-600", desc: "450 DSA problems" },
+  { label: "Resume Analyzer", icon: FileText, href: "/resume", color: "from-green-600 to-emerald-600", desc: "ATS score & tips" },
+  { label: "Analytics",       icon: TrendingUp, href: "/analytics", color: "from-orange-600 to-red-600", desc: "Track progress" },
+];
 
 export const Dashboard = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [analytics, setAnalytics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [interviewLoading, setInterviewLoading] = useState(false);
-
-  const startInterview = async (type = "behavioral") => {
-    try {
-      setInterviewLoading(true);
-      const res = await apiClient.post("/api/interview/start", {
-        interviewType: type,
-      });
-
-      if (res.data.success) {
-        toast.success("Interview started!");
-        navigate(`/interview/${res.data.sessionId}`);
-      } else {
-        toast.error("Failed to start interview");
-      }
-    } catch (error) {
-      console.error("Error starting interview:", error);
-      toast.error("Error starting interview");
-    } finally {
-      setInterviewLoading(false);
-    }
-  };
+  const { userProfile, user } = useAuth();
+  const [interviewHistory, setInterviewHistory] = useState([]);
+  const [solvedCount, setSolvedCount] = useState(0);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch user stats
-        const statsRes = await apiClient.get("/api/auth/stats");
-        setStats(statsRes.data.data);
-
-        // Fetch analytics
-        const analyticsRes = await apiClient.get("/api/analytics");
-        setAnalytics(analyticsRes.data.data);
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    setInterviewHistory(getInterviewHistory());
+    setSolvedCount(getSolvedCount());
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  const stats = useMemo(() => {
+    const scores = interviewHistory.flatMap((s) => s.scores || []);
+    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
+    return {
+      avgScore: avg,
+      totalInterviews: interviewHistory.length,
+      solvedProblems: solvedCount,
+      streak: Math.min(interviewHistory.length, 7),
+    };
+  }, [interviewHistory, solvedCount]);
 
-  const scoreData = analytics?.scoreByDate || [];
-  const topicData = Object.entries(analytics?.interviewsByType || {}).map(
-    ([name, value]) => ({
-      name,
-      value,
-    })
-  );
+  // Build score trend from history
+  const scoreData = useMemo(() => {
+    return interviewHistory.slice(0, 7).reverse().map((s, i) => {
+      const scores = s.scores || [];
+      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
+      return {
+        day: new Date(s.completedAt || Date.now()).toLocaleDateString("en", { weekday: "short" }),
+        score: avg,
+      };
+    });
+  }, [interviewHistory]);
+
+  // Mode distribution
+  const modeData = useMemo(() => {
+    const counts = {};
+    interviewHistory.forEach((s) => { counts[s.mode] = (counts[s.mode] || 0) + 1; });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [interviewHistory]);
+
+  const STAT_CARDS = [
+    { label: "Avg Score", value: stats.avgScore, suffix: "/100", icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-500/10" },
+    { label: "Interviews", value: stats.totalInterviews, suffix: "", icon: Brain, color: "text-cyan-600", bg: "bg-cyan-500/10" },
+    { label: "Problems Solved", value: stats.solvedProblems, suffix: "/448", icon: BookOpen, color: "text-green-600", bg: "bg-green-500/10" },
+    { label: "Day Streak", value: stats.streak, suffix: " 🔥", icon: Flame, color: "text-orange-600", bg: "bg-orange-500/10" },
+  ];
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -104,270 +86,172 @@ export const Dashboard = () => {
         <Header />
         <main className="flex-1 overflow-auto">
           <Container className="py-8">
-            {/* Hero Section */}
+            {/* Welcome */}
             <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-                Welcome back, {userProfile?.name}! 👋
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-1">
+                Welcome back{userProfile?.name ? `, ${userProfile.name}` : ""}! 👋
               </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Your AI interview coach is ready. Let's prepare for your dream job.
+              <p className="text-gray-500 dark:text-gray-400">
+                Your AI interview coach is ready. Let's land that dream job.
               </p>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              {/* Average Score */}
-              <Card className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full group-hover:scale-110 transition-transform duration-300" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      Average Score
-                    </h3>
-                    <TrendingUp className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.averageScore || "0"}
-                    <span className="text-lg text-gray-500">/100</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Based on {stats?.totalInterviews} interviews
-                  </p>
-                </div>
-              </Card>
-
-              {/* Total Interviews */}
-              <Card className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full group-hover:scale-110 transition-transform duration-300" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      Interviews
-                    </h3>
-                    <Brain className="w-5 h-5 text-cyan-600" />
-                  </div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.totalInterviews || "0"}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Total practice sessions
-                  </p>
-                </div>
-              </Card>
-
-              {/* Coding Problems */}
-              <Card className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-full group-hover:scale-110 transition-transform duration-300" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      Problems Solved
-                    </h3>
-                    <BookOpen className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.codingProblems || "0"}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Coding practice solutions
-                  </p>
-                </div>
-              </Card>
-
-              {/* Current Streak */}
-              <Card className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 rounded-full group-hover:scale-110 transition-transform duration-300" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      Current Streak
-                    </h3>
-                    <Flame className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.streak || "0"}
-                    <span className="text-lg text-gray-500"> days</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Keep it going! 🔥
-                  </p>
-                </div>
-              </Card>
+            {/* Stats grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {STAT_CARDS.map((s) => {
+                const Icon = s.icon;
+                return (
+                  <Card key={s.label} className="relative overflow-hidden group hover:scale-[1.02] transition-transform">
+                    <div className={`absolute top-0 right-0 w-20 h-20 ${s.bg} rounded-full -translate-y-4 translate-x-4`} />
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</p>
+                        <Icon className={`w-5 h-5 ${s.color}`} />
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                        {s.value}<span className="text-base text-gray-400 font-normal">{s.suffix}</span>
+                      </p>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
 
-            {/* Charts Section */}
+            {/* Quick actions */}
+            <div className="mb-8">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {QUICK_ACTIONS.map((a) => {
+                  const Icon = a.icon;
+                  return (
+                    <Link
+                      key={a.href}
+                      to={a.href}
+                      className="group relative overflow-hidden rounded-2xl p-5 text-white hover:scale-[1.02] transition-all shadow-md hover:shadow-xl"
+                      style={{ background: `linear-gradient(135deg, var(--tw-gradient-stops))` }}
+                    >
+                      <div className={`absolute inset-0 bg-gradient-to-br ${a.color}`} />
+                      <div className="relative">
+                        <Icon className="w-8 h-8 mb-3 opacity-90" />
+                        <h3 className="font-bold text-base">{a.label}</h3>
+                        <p className="text-xs opacity-75 mt-0.5">{a.desc}</p>
+                        <ChevronRight className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* Interview Score Trend */}
               <Card>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Interview Score Trend
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-purple-600" /> Score Trend
                 </h2>
                 {scoreData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={220}>
                     <LineChart data={scoreData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis
-                        dataKey="date"
-                        stroke="#9ca3af"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1f2937",
-                          border: "none",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#9333ea"
-                        dot={{ fill: "#9333ea", r: 4 }}
-                        strokeWidth={2}
-                      />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
+                      <XAxis dataKey="day" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <YAxis domain={[0, 100]} stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "none", borderRadius: 8, color: "#fff" }} />
+                      <Line type="monotone" dataKey="score" stroke="#9333ea" strokeWidth={2} dot={{ fill: "#9333ea", r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500">
-                    No data yet
+                  <div className="h-48 flex flex-col items-center justify-center text-gray-400 gap-2">
+                    <Brain className="w-10 h-10 opacity-30" />
+                    <p className="text-sm">Complete interviews to see your trend</p>
+                    <Link to="/interview" className="text-purple-600 text-sm hover:underline">Start your first interview →</Link>
                   </div>
                 )}
               </Card>
 
-              {/* Interview Types Distribution */}
               <Card>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Interview Types
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-cyan-600" /> Interview Modes
                 </h2>
-                {topicData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={topicData}>
+                {modeData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={modeData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis
-                        dataKey="name"
-                        stroke="#9ca3af"
-                        tick={{ fontSize: 12 }}
-                      />
+                      <XAxis dataKey="name" stroke="#9ca3af" tick={{ fontSize: 12 }} />
                       <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1f2937",
-                          border: "none",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Bar
-                        dataKey="value"
-                        fill="#06b6d4"
-                        radius={[8, 8, 0, 0]}
-                      />
+                      <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "none", borderRadius: 8, color: "#fff" }} />
+                      <Bar dataKey="value" fill="#06b6d4" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500">
-                    No data yet
+                  <div className="h-48 flex flex-col items-center justify-center text-gray-400 gap-2">
+                    <MessageSquare className="w-10 h-10 opacity-30" />
+                    <p className="text-sm">No interviews yet</p>
                   </div>
                 )}
               </Card>
             </div>
 
-            {/* Recommendations Section */}
+            {/* Recent interviews */}
+            {interviewHistory.length > 0 && (
+              <Card className="mb-8">
+                <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-500" /> Recent Interviews
+                </h2>
+                <div className="space-y-3">
+                  {interviewHistory.slice(0, 5).map((s, i) => {
+                    const scores = s.scores || [];
+                    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : "—";
+                    return (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                            <Brain className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">{s.mode} Interview</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {s.role} · {s.difficulty} · {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-bold ${avg >= 70 ? "text-green-500" : avg >= 50 ? "text-yellow-500" : "text-red-500"}`}>
+                            {avg}{typeof avg === "number" ? "/100" : ""}
+                          </p>
+                          <p className="text-xs text-gray-400">{scores.length} questions</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+
+            {/* Recommendations */}
             <Card>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                🎯 Personalized Recommendations
+              <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-500" /> Personalized Tips
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-900/10 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <div className="flex items-start space-x-3">
-                    <Target className="w-5 h-5 text-purple-600 mt-1 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-semibold text-purple-900 dark:text-purple-300 mb-1">
-                        Focus on Weak Areas
-                      </h3>
-                      <p className="text-sm text-purple-800 dark:text-purple-400">
-                        Practice more on DBMS and System Design. You're doing
-                        great on DSA!
-                      </p>
+                {[
+                  { icon: Target, color: "purple", title: "Practice Daily", body: "Even 20 minutes of daily practice improves confidence significantly." },
+                  { icon: Code2, color: "blue", title: "DSA Focus", body: "Arrays, Trees, and DP cover 80% of technical interview questions." },
+                  { icon: Award, color: "green", title: "ATS Optimization", body: "Use your Resume Analyzer to boost your ATS score above 80%." },
+                  { icon: Flame, color: "orange", title: "Mock Interviews", body: "Schedule regular mock interviews to reduce anxiety and improve delivery." },
+                ].map((tip) => {
+                  const Icon = tip.icon;
+                  return (
+                    <div key={tip.title} className={`p-4 rounded-xl bg-${tip.color}-50 dark:bg-${tip.color}-900/20 border border-${tip.color}-100 dark:border-${tip.color}-900/40`}>
+                      <div className="flex items-start gap-3">
+                        <Icon className={`w-5 h-5 text-${tip.color}-600 mt-0.5`} />
+                        <div>
+                          <h3 className={`font-semibold text-${tip.color}-900 dark:text-${tip.color}-300 mb-1 text-sm`}>{tip.title}</h3>
+                          <p className={`text-xs text-${tip.color}-800 dark:text-${tip.color}-400`}>{tip.body}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-900/20 dark:to-cyan-900/10 rounded-lg border border-cyan-200 dark:border-cyan-800">
-                  <div className="flex items-start space-x-3">
-                    <Award className="w-5 h-5 text-cyan-600 mt-1 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-semibold text-cyan-900 dark:text-cyan-300 mb-1">
-                        Next Interview
-                      </h3>
-                      <p className="text-sm text-cyan-800 dark:text-cyan-400">
-                        Try a System Design interview to improve architectural
-                        thinking
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10 rounded-lg border border-green-200 dark:border-green-800">
-                  <div className="flex items-start space-x-3">
-                    <Clock className="w-5 h-5 text-green-600 mt-1 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-semibold text-green-900 dark:text-green-300 mb-1">
-                        Study Plan
-                      </h3>
-                      <p className="text-sm text-green-800 dark:text-green-400">
-                        30 mins daily on weak topics + 1 coding problem
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-900/10 rounded-lg border border-orange-200 dark:border-orange-800">
-                  <div className="flex items-start space-x-3">
-                    <Flame className="w-5 h-5 text-orange-600 mt-1 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-semibold text-orange-900 dark:text-orange-300 mb-1">
-                        Daily Challenge
-                      </h3>
-                      <p className="text-sm text-orange-800 dark:text-orange-400">
-                        Complete today's coding challenge to maintain your
-                        streak!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card className="mb-8">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Button
-                  onClick={() => startInterview("behavioral")}
-                  disabled={interviewLoading}
-                  variant="gradient"
-                  size="lg"
-                  className="w-full"
-                >
-                  🎤 Start Interview
-                </Button>
-                <Button
-                  onClick={() => navigate("/coding")}
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
-                >
-                  💻 Coding Practice
-                </Button>
-                <Button
-                  onClick={() => navigate("/resume")}
-                  variant="secondary"
-                  size="lg"
-                  className="w-full"
-                >
-                  📄 Analyze Resume
-                </Button>
+                  );
+                })}
               </div>
             </Card>
           </Container>

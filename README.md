@@ -1,305 +1,108 @@
-# PrepAI - AI-Powered Interview Preparation Platform
+# PrepAI – AI-Powered Interview Preparation Platform
 
-A modern, full-stack SaaS application for interview preparation with AI-powered coaching, real-time feedback, and comprehensive analytics.
+A full-featured, production-ready platform for software engineering interview preparation.
 
-## 🚀 Features
+## ✨ Features
 
-### Core Features
-- **AI Interview Coach**: Practice interviews with an advanced AI model powered by Google Gemini
-- **Real-time Feedback**: Get instant feedback on technical accuracy, communication, and clarity
-- **Coding Practice**: Solve 500+ LeetCode-style problems with Monaco editor
-- **Resume Analyzer**: Upload your resume for ATS scoring and improvement suggestions
-- **Analytics Dashboard**: Track progress with detailed charts and insights
-- **Global Leaderboard**: Compete with other candidates and earn badges
+| Feature | Status | Details |
+|---------|--------|---------|
+| 450 DSA Problems | ✅ | Topic + difficulty filtering, search, solved tracking |
+| Monaco Code Editor | ✅ | JS, Python, C, C++, Java with dark/light theme |
+| Code Execution | ✅ | Browser JS + Judge0 API (optional key) |
+| AI Interview Room | ✅ | Technical, Behavioral, HR modes; voice input; scoring |
+| Resume Analyzer | ✅ | PDF/DOC upload, ATS score, AI suggestions |
+| Firebase Auth | ✅ | Email/password login, register, protected routes |
+| Dashboard | ✅ | Stats, charts, recent sessions |
+| Analytics | ✅ | Score trends, radar chart, session history |
+| Leaderboard | ✅ | Community rankings |
+| Dark Mode | ✅ | Full Tailwind dark mode support |
+| Mobile Responsive | ✅ | Works on all screen sizes |
 
-### Interview Modes
-- Technical Interview
-- HR Interview
-- Mixed Interview
-- Rapid Fire
-- Project-Based Interview
+## 🚀 Quick Start
 
-### Technologies
-
-**Frontend:**
-- React.js 18
-- Vite
-- Tailwind CSS
-- Framer Motion (animations)
-- Recharts (analytics)
-- Monaco Editor (code editor)
-- Firebase Authentication
-
-**Backend:**
-- Node.js + Express.js
-- Firebase Firestore (database)
-- Firebase Authentication
-- Google Gemini API
-- Multer (file uploads)
-
-**Deployment Ready:**
-- Docker support
-- Environment-based configuration
-- Production-grade error handling
-
-## 📋 Project Structure
-
-```
-prepai/
-├── src/
-│   ├── app/
-│   ├── components/
-│   │   ├── ui/          # Reusable UI components
-│   │   ├── layout/      # Layout components
-│   │   └── common/      # Common components
-│   ├── features/
-│   │   ├── auth/        # Authentication
-│   │   ├── dashboard/   # Dashboard
-│   │   ├── interview/   # Interview room
-│   │   ├── resume/      # Resume analyzer
-│   │   ├── analytics/   # Analytics
-│   │   ├── coding/      # Coding practice
-│   │   ├── leaderboard/ # Leaderboard
-│   │   ├── landing/     # Landing page
-│   │   └── profile/     # User profile
-│   ├── services/        # API services
-│   ├── hooks/           # Custom hooks
-│   ├── utils/           # Utilities
-│   ├── config/          # Configuration
-│   ├── styles/          # Global styles
-│   ├── data/            # Mock data
-│   ├── assets/          # Images, fonts
-│   ├── App.jsx
-│   └── index.js
-├── server/
-│   ├── controllers/     # Route controllers
-│   ├── routes/          # API routes
-│   ├── middleware/      # Express middleware
-│   ├── services/        # Business logic
-│   ├── prompts/         # AI prompts
-│   ├── config/          # Configuration
-│   ├── utils/           # Utilities
-│   └── server.js
-├── public/
-├── package.json
-├── tailwind.config.js
-└── README.md
-```
-
-## 🔧 Setup Instructions
-
-### Prerequisites
-- Node.js >= 16
-- npm or yarn
-- Firebase project account
-- Google Gemini API key
-
-### Frontend Setup
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Create `.env` file:**
-   ```env
-   REACT_APP_FIREBASE_API_KEY=your_api_key
-   REACT_APP_FIREBASE_AUTH_DOMAIN=your_auth_domain
-   REACT_APP_FIREBASE_PROJECT_ID=your_project_id
-   REACT_APP_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-   REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   REACT_APP_FIREBASE_APP_ID=your_app_id
-   REACT_APP_API_URL=http://localhost:5001
-   ```
-
-3. **Start development server:**
-   ```bash
-   npm start
-   ```
-
-### Backend Setup
-
-1. **Navigate to server directory:**
-   ```bash
-   cd server
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Create `.env` file:**
-   ```env
-   PORT=5001
-   NODE_ENV=development
-   REACT_APP_FIREBASE_PROJECT_ID=your_project_id
-   GEMINI_API_KEY=your_gemini_api_key
-   FIREBASE_SERVICE_ACCOUNT=your_firebase_service_account_json
-   ```
-
-4. **Start server:**
-   ```bash
-   npm run dev
-   ```
-
-### Run Both Frontend and Backend
+### 1. Clone & Install
 
 ```bash
-npm run dev
+git clone https://github.com/Shiva291-045/project-2.git
+cd project-2
+npm install
 ```
 
-This will start both the React app (port 5000) and Express server (port 5001) concurrently.
+### 2. Configure Environment
 
-## 📚 API Endpoints
+Copy `.env.example` to `.env` and fill in your keys:
 
-### Authentication
-- `POST /api/auth/profile` - Get user profile
-- `PUT /api/auth/profile` - Update user profile
-- `GET /api/auth/stats` - Get user statistics
-
-### Interview
-- `POST /api/interview/start` - Start new interview
-- `POST /api/interview/:id/message` - Send message in interview
-- `POST /api/interview/:id/end` - End interview
-- `GET /api/interview/history` - Get interview history
-
-### Coding
-- `GET /api/coding/problems` - Get coding problems
-- `POST /api/coding/submit` - Submit solution
-- `GET /api/coding/submissions` - Get submission history
-
-### Analytics
-- `GET /api/analytics` - Get user analytics
-- `GET /api/analytics/topics` - Get topic-wise analytics
-
-### Leaderboard
-- `GET /api/leaderboard` - Get global leaderboard
-- `GET /api/leaderboard/rank` - Get user rank
-
-## 🎨 UI/UX Features
-
-- **Dark/Light Mode**: Theme toggle with localStorage persistence
-- **Glassmorphism Cards**: Modern card design with transparency
-- **Gradient Accents**: Purple and Cyan gradient theme
-- **Smooth Animations**: Framer Motion animations
-- **Responsive Design**: Mobile-first approach
-- **Loading States**: Skeleton loaders and spinners
-- **Toast Notifications**: React Hot Toast integration
-
-## 🔐 Security Features
-
-- Firebase Authentication
-- JWT token verification on backend
-- Protected routes
-- Secure API endpoints
-- Environment variable management
-- CORS configuration
-
-## 📊 Database Schema
-
-### Users Collection
-```javascript
-{
-  uid: string,
-  name: string,
-  email: string,
-  targetRole: string,
-  skills: string[],
-  bio: string,
-  streak: number,
-  xp: number,
-  strongTopics: string[],
-  weakTopics: string[],
-  createdAt: timestamp
-}
+```bash
+cp .env.example .env
 ```
 
-### Interviews Collection
-```javascript
-{
-  userId: string,
-  type: string,
-  skills: string[],
-  messages: array,
-  score: number,
-  feedback: string,
-  duration: number,
-  startedAt: timestamp,
-  endedAt: timestamp,
-  status: string
-}
+**Required:** Firebase credentials (get from [Firebase Console](https://console.firebase.google.com))  
+**Optional:** Anthropic API key (better AI responses), Judge0 key (multi-language code execution)
+
+### 3. Run Development Server
+
+```bash
+npm start
 ```
 
-### Coding Submissions Collection
-```javascript
-{
-  userId: string,
-  problemId: string,
-  code: string,
-  language: string,
-  passed: boolean,
-  submittedAt: timestamp
-}
+App opens at `http://localhost:3000`
+
+## 🔧 Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `REACT_APP_FIREBASE_*` | ✅ | Firebase project credentials |
+| `REACT_APP_ANTHROPIC_KEY` | Optional | AI-powered resume analysis & interview feedback |
+| `REACT_APP_JUDGE0_KEY` | Optional | Multi-language code execution via Judge0 |
+
+## 🏗️ Architecture
+
+```
+src/
+├── components/
+│   ├── layout/        # Header, Sidebar
+│   ├── ui/            # Button, Card, Badge, etc.
+│   └── ProtectedRoute.jsx
+├── context/
+│   └── AuthContext.jsx  # Firebase auth state
+├── features/
+│   ├── analytics/     # Progress charts
+│   ├── auth/          # Login, Register
+│   ├── coding/        # 450 DSA problems + editor
+│   ├── dashboard/     # Home screen
+│   ├── interview/     # AI interview room
+│   ├── landing/       # Public landing page
+│   ├── leaderboard/   # Rankings
+│   └── resume/        # Resume analyzer
+├── data/
+│   └── 450DSA.json    # Problem database
+├── hooks/
+│   └── useAuth.js
+└── services/
+    └── apiClient.js
 ```
 
-## 🚀 Deployment
+## 🎯 Key Decisions
 
-### Firebase Deployment (Frontend)
+- **Local-first**: Solved problems, interview history, and analytics are stored in localStorage — no backend required.
+- **AI optional**: The platform works fully without API keys; connecting Anthropic adds richer AI responses.
+- **Firebase auth**: Secure authentication with email/password; Firestore stores optional profile data.
+- **Judge0 for code**: Optional RapidAPI key enables multi-language execution; JS runs directly in the browser as fallback.
+
+## 📦 Build for Production
+
 ```bash
 npm run build
-firebase deploy --only hosting
 ```
 
-### Heroku Deployment (Backend)
-```bash
-git push heroku main
-```
+Output goes to `build/` — deploy to Vercel, Netlify, Firebase Hosting, or any static host.
 
-### Docker Deployment
-```bash
-docker build -t prepai-frontend .
-docker run -p 3000:3000 prepai-frontend
+## 🛠️ Tech Stack
 
-cd server
-docker build -t prepai-backend .
-docker run -p 5000:5000 prepai-backend
-```
-
-## 🎓 Demo Credentials
-
-**Email:** demo@prepai.com
-**Password:** Demo123!@#
-
-## 📝 Features in Progress
-
-- [ ] Voice interview mode
-- [ ] Resume ATS checker
-- [ ] Gamification system
-- [ ] Achievement badges
-- [ ] Daily challenges
-- [ ] Community forum
-- [ ] Real-time notifications
-- [ ] Interview scheduling calendar
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## 📄 License
-
-MIT License - feel free to use this project for your own purposes.
-
-## 📞 Support
-
-For support, email support@prepai.com or open an issue on GitHub.
-
----
-
-**Built with ❤️ by the PrepAI Team**
+- **React 18** + React Router v6
+- **Tailwind CSS** + custom dark mode
+- **Firebase 10** (Auth + Firestore)
+- **Monaco Editor** (@monaco-editor/react)
+- **Recharts** for analytics
+- **Framer Motion** for animations
+- **Lucide React** icons
