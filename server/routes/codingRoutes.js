@@ -10,10 +10,9 @@ import {
 } from "../data/dsaProblems.js";
 import { gradeCodeSolution, generateCodingExplanation } from "../services/geminiService.js";
 import { verifyToken } from "../middleware/auth.js";
-import admin from "firebase-admin";
+import { db } from "../config/firebase.js";
 
 const router = express.Router();
-const db = admin.firestore();
 
 /**
  * GET /api/coding/problems

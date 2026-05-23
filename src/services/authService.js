@@ -34,8 +34,41 @@ setPersistence(auth, browserLocalPersistence).catch((error) => {
  * Local demo auth fallback
  * Used when Firebase is not available or Email/Password is not enabled
  */
-const demoUsers = {};
-let currentDemoUser = null;
+const getStoredDemoUsers = () => {
+  try {
+    const data = localStorage.getItem("demoUsers");
+    return data ? JSON.parse(data) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveStoredDemoUsers = (users) => {
+  try {
+    localStorage.setItem("demoUsers", JSON.stringify(users));
+  } catch (e) {}
+};
+
+const getStoredCurrentDemoUser = () => {
+  try {
+    const data = localStorage.getItem("currentDemoUser");
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const saveStoredCurrentDemoUser = (user) => {
+  try {
+    if (user) {
+      localStorage.setItem("currentDemoUser", JSON.stringify(user));
+      localStorage.setItem("authToken", "demo_token_" + user.uid);
+    } else {
+      localStorage.removeItem("currentDemoUser");
+      localStorage.removeItem("authToken");
+    }
+  } catch (e) {}
+};
 
 const createMockUser = (email, displayName) => {
   return {
@@ -53,7 +86,8 @@ const createMockUser = (email, displayName) => {
 
 const demoAuthFallback = {
   register: async (email, password, displayName) => {
-    if (demoUsers[email.toLowerCase()]) {
+    const users = getStoredDemoUsers();
+    if (users[email.toLowerCase()]) {
       return {
         success: false,
         error: "auth/email-already-in-use",
@@ -61,14 +95,24 @@ const demoAuthFallback = {
       };
     }
     const user = createMockUser(email, displayName);
-    demoUsers[email.toLowerCase()] = { ...user, password };
-    currentDemoUser = user;
+    users[email.toLowerCase()] = { ...user, password };
+    saveStoredDemoUsers(users);
+    saveStoredCurrentDemoUser(user);
     return { user, success: true };
   },
 
   login: async (email, password) => {
-    const user = demoUsers[email.toLowerCase()];
+    const users = getStoredDemoUsers();
+    let user = users[email.toLowerCase()];
     if (!user) {
+      if (email.toLowerCase() === "demo@example.com") {
+        // Auto-register demo account for zero-friction
+        const newUser = createMockUser("demo@example.com", "Demo User");
+        users["demo@example.com"] = { ...newUser, password: "Demo@12345" };
+        saveStoredDemoUsers(users);
+        saveStoredCurrentDemoUser(newUser);
+        return { user: newUser, success: true };
+      }
       return {
         success: false,
         error: "auth/user-not-found",
@@ -82,14 +126,15 @@ const demoAuthFallback = {
         message: "Wrong password",
       };
     }
-    currentDemoUser = user;
+    saveStoredCurrentDemoUser(user);
     return { user, success: true };
   },
 
-  getCurrentUser: () => currentDemoUser,
+  getCurrentUser: () => getStoredCurrentDemoUser(),
 
   onAuthStateChanged: (callback) => {
-    callback(currentDemoUser);
+    const user = getStoredCurrentDemoUser();
+    callback(user);
     return () => {};
   },
 };
@@ -169,13 +214,11 @@ const authService = {
    */
   logout: async () => {
     try {
-      await signOut(auth);
-      // Clear demo user if any
-      currentDemoUser = null;
+      await signOut(auth).catch(() => {});
+      saveStoredCurrentDemoUser(null);
       return { success: true };
     } catch (error) {
-      // Ensure demo user is cleared on logout
-      currentDemoUser = null;
+      saveStoredCurrentDemoUser(null);
       return { success: true };
     }
   },
@@ -203,20 +246,39 @@ const authService = {
    * Get current user
    */
   getCurrentUser: () => {
-    // Only return Firebase user - never fallback to demo here
-    return auth.currentUser;
+    try {
+      return auth.currentUser || getStoredCurrentDemoUser();
+    } catch (e) {
+      return getStoredCurrentDemoUser();
+    }
   },
 
   /**
    * Subscribe to auth state changes
    */
   onAuthStateChanged: (callback) => {
-    // NEVER fallback for auth state checking - only use Firebase
-    // Demo auth should only work for explicit login/register actions
-    return onAuthStateChanged(auth, (user) => {
-      // Only call callback with actual Firebase user (null if not logged in)
-      callback(user);
-    });
+    try {
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          const token = await user.getIdToken();
+          localStorage.setItem("authToken", token);
+          callback(user);
+        } else {
+          const demoUser = getStoredCurrentDemoUser();
+          if (demoUser) {
+            callback(demoUser);
+          } else {
+            localStorage.removeItem("authToken");
+            callback(null);
+          }
+        }
+      });
+      return unsubscribe;
+    } catch (e) {
+      const demoUser = getStoredCurrentDemoUser();
+      callback(demoUser);
+      return () => {};
+    }
   },
 
   /**
@@ -228,7 +290,20 @@ const authService = {
       const userDocSnap = await getDoc(userDocRef);
       return userDocSnap.exists() ? userDocSnap.data() : null;
     } catch (error) {
-      console.error("Error fetching user profile:", error);
+      console.warn("Firestore getUserProfile failed, falling back to local profile:", error);
+      const demoUser = getStoredCurrentDemoUser();
+      if (demoUser && demoUser.uid === uid) {
+        return {
+          uid: demoUser.uid,
+          displayName: demoUser.displayName,
+          name: demoUser.displayName,
+          email: demoUser.email,
+          targetRole: demoUser.targetRole || "Full Stack Developer",
+          skills: demoUser.skills || ["React", "JavaScript", "Node.js"],
+          experience: demoUser.experience || "mid",
+          bio: demoUser.bio || "Hi, I am preparing for my tech interviews using PrepAI!",
+        };
+      }
       return null;
     }
   },
@@ -245,6 +320,17 @@ const authService = {
       });
       return { success: true };
     } catch (error) {
+      console.warn("Firestore updateUserProfile failed, updating local profile:", error);
+      const demoUser = getStoredCurrentDemoUser();
+      if (demoUser && demoUser.uid === uid) {
+        const updated = {
+          ...demoUser,
+          ...updates,
+          displayName: updates.name || demoUser.displayName,
+        };
+        saveStoredCurrentDemoUser(updated);
+        return { success: true };
+      }
       return {
         success: false,
         message: "Failed to update profile",
