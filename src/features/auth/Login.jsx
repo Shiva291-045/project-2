@@ -1,205 +1,93 @@
-/**
- * Login Page
- * Production-ready login with comprehensive validation, error handling, and UX
- */
-
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
-import {
-  validateEmail,
-  validateField,
-  FORM_RULES,
-  trimFormValues,
-} from "../../utils/validation";
 import toast from "react-hot-toast";
-import { Eye, EyeOff, Mail, Lock, Loader } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Loader, Zap } from "lucide-react";
+
+const DEMO_EMAIL = "demo@prepai.com";
+const DEMO_PASSWORD = "Demo@12345";
 
 export const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register, error: authError, clearError } = useAuth();
+  const { login, error: authError, clearError } = useAuth();
 
-  // Form state
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-
-  const [fieldErrors, setFieldErrors] = useState({});
+  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [demoFilled, setDemoFilled] = useState(false);
 
-  // Clear auth error on component mount
-  useEffect(() => {
-    clearError?.();
-  }, [clearError]);
+  useEffect(() => { clearError?.(); }, [clearError]);
 
-  // Display auth errors
   useEffect(() => {
-    if (authError) {
-      toast.error(authError);
-    }
+    if (authError) toast.error(authError);
   }, [authError]);
 
-  /**
-   * Handle field change with real-time validation
-   */
-  const handleFieldChange = (e) => {
+  // ── Validation ──────────────────────────────────────────────────────
+  const validate = (data) => {
+    const errs = {};
+    if (!data.email)                          errs.email    = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(data.email)) errs.email    = "Enter a valid email";
+    if (!data.password)                       errs.password = "Password is required";
+    else if (data.password.length < 6)        errs.password = "Password must be at least 6 characters";
+    return errs;
+  };
+
+  const handleChange = (e) => {
     const { name, value } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Validate field if it's been touched
+    setFormData((p) => ({ ...p, [name]: value }));
+    setDemoFilled(false);
     if (touched[name]) {
-      const validation = validateField(name, value, FORM_RULES);
-      setFieldErrors((prev) => ({
-        ...prev,
-        [name]: validation.error,
-      }));
+      setErrors((p) => ({ ...p, [name]: validate({ ...formData, [name]: value })[name] }));
     }
   };
 
-  /**
-   * Handle field blur
-   */
-  const handleFieldBlur = (e) => {
-    const { name, value } = e.target;
-
-    setTouched((prev) => ({
-      ...prev,
-      [name]: true,
-    }));
-
-    const validation = validateField(name, value, FORM_RULES);
-    setFieldErrors((prev) => ({
-      ...prev,
-      [name]: validation.error,
-    }));
+  const handleBlur = (e) => {
+    const { name } = e.target;
+    setTouched((p) => ({ ...p, [name]: true }));
+    setErrors((p) => ({ ...p, [name]: validate(formData)[name] }));
   };
 
-  /**
-   * Validate entire form
-   */
-  const validateForm = () => {
-    const errors = {};
-    const trimmed = trimFormValues(formData);
-
-    // Validate email
-    const emailValidation = validateEmail(trimmed.email);
-    if (!emailValidation.isValid) {
-      errors.email = emailValidation.error;
-    }
-
-    // Validate password
-    if (!trimmed.password) {
-      errors.password = "Password is required";
-    }
-
-    return errors;
-  };
-
-  /**
-   * Handle form submission
-   */
+  // ── Submit ──────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // Validate form
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
+    setTouched({ email: true, password: true });
+    const errs = validate(formData);
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
       toast.error("Please fix the errors below");
       return;
     }
-
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const trimmed = trimFormValues(formData);
-
-      // Call login function
-      const result = await login(trimmed.email, trimmed.password);
-
+      const result = await login(formData.email.trim(), formData.password);
       if (result.success) {
-        toast.success("Login successful!");
-
-        const from = location.state?.from || "/dashboard";
-        navigate(from, { replace: true });
+        navigate(location.state?.from || "/dashboard", { replace: true });
       } else {
         toast.error(result.message || "Login failed");
       }
-    } catch (err) {
-      console.error("Login error:", err);
+    } catch {
       toast.error("An unexpected error occurred");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoLogin = async () => {
-    const demoEmail = "demo@example.com";
-    const demoPassword = "Demo@12345";
-    const demoName = "Demo User";
-
-    try {
-      setLoading(true);
-
-      const loginResult = await login(demoEmail, demoPassword);
-
-      if (loginResult.success) {
-        toast.success("Demo login successful!");
-        const from = location.state?.from || "/dashboard";
-        navigate(from, { replace: true });
-        return;
-      }
-
-      // If demo login fails, attempt to create the demo account and retry login.
-      const registerResult = await register(demoEmail, demoPassword, demoName);
-      if (registerResult.success) {
-        toast.success("Demo account created and logged in!");
-        const from = location.state?.from || "/dashboard";
-        navigate(from, { replace: true });
-        return;
-      }
-
-      // If the demo account already exists, try logging in again.
-      if (registerResult.error === "auth/email-already-in-use") {
-        const secondTry = await login(demoEmail, demoPassword);
-        if (secondTry.success) {
-          toast.success("Demo login successful!");
-          const from = location.state?.from || "/dashboard";
-          navigate(from, { replace: true });
-          return;
-        }
-      }
-
-      console.error("Demo login failure details:", {
-        loginResult,
-        registerResult,
-      });
-      toast.error(
-        loginResult.message || registerResult.message || "Demo login failed"
-      );
-    } catch (err) {
-      console.error("Demo login error:", err);
-      toast.error("Demo login failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+  // ── Fill demo credentials into the form (does NOT auto-login) ───────
+  const handleFillDemo = () => {
+    setFormData({ email: DEMO_EMAIL, password: DEMO_PASSWORD });
+    setErrors({});
+    setTouched({});
+    setDemoFilled(true);
+    toast.success("Demo credentials filled! Click Sign In to continue.");
   };
-
-  const hasEmailError = touched.email && fieldErrors.email;
-  const hasPasswordError = touched.password && fieldErrors.password;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Header */}
+        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-600 mb-4 shadow-lg">
             <span className="text-white font-bold text-2xl">P</span>
@@ -207,97 +95,96 @@ export const Login = () => {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
             Welcome Back
           </h1>
-          <p className="text-gray-400">
-            Sign in to your PrepAI account
-          </p>
+          <p className="text-gray-400">Sign in to your PrepAI account</p>
         </div>
 
-        {/* Form Card */}
+        {/* Card */}
         <div className="bg-gray-800/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden">
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
-            {/* Email Input */}
+          <form onSubmit={handleSubmit} className="p-8 space-y-5">
+
+            {/* Demo credentials hint banner */}
+            {demoFilled && (
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-900/30 border border-green-700/50">
+                <Zap className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-green-300">
+                  Demo credentials filled. Review them below and click <strong>Sign In</strong>.
+                </p>
+              </div>
+            )}
+
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type="email"
                   name="email"
                   value={formData.email}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="you@example.com"
-                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasEmailError
-                      ? "border-red-500/50 bg-red-500/10"
+                  autoComplete="email"
+                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                    touched.email && errors.email
+                      ? "border-red-500/60 bg-red-500/10"
+                      : demoFilled
+                      ? "border-green-500/60 bg-green-500/10"
                       : "border-gray-600/50"
                   }`}
                 />
               </div>
-              {hasEmailError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.email}</p>
+              {touched.email && errors.email && (
+                <p className="text-red-400 text-xs mt-1.5">{errors.email}</p>
               )}
             </div>
 
-            {/* Password Input */}
+            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="••••••••"
-                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasPasswordError
-                      ? "border-red-500/50 bg-red-500/10"
+                  autoComplete="current-password"
+                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                    touched.password && errors.password
+                      ? "border-red-500/60 bg-red-500/10"
+                      : demoFilled
+                      ? "border-green-500/60 bg-green-500/10"
                       : "border-gray-600/50"
                   }`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              {hasPasswordError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.password}</p>
+              {touched.password && errors.password && (
+                <p className="text-red-400 text-xs mt-1.5">{errors.password}</p>
               )}
             </div>
 
-            {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded bg-gray-700/50 border-gray-600/50 text-purple-600 cursor-pointer"
-                />
-                <span className="text-sm text-gray-400 group-hover:text-gray-300">
-                  Remember me
-                </span>
-              </label>
-              <Link
-                to="/forgot-password"
-                className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
-              >
+            {/* Forgot password */}
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-sm text-purple-400 hover:text-purple-300 transition-colors">
                 Forgot password?
               </Link>
             </div>
 
-            {/* Submit Button */}
+            {/* Sign In button */}
             <button
               type="submit"
               disabled={loading}
@@ -307,43 +194,51 @@ export const Login = () => {
               {loading ? "Signing in..." : "Sign In"}
             </button>
 
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-700" />
+              <span className="text-xs text-gray-500">or</span>
+              <div className="flex-1 h-px bg-gray-700" />
+            </div>
+
+            {/* Fill Demo Credentials button */}
             <button
               type="button"
-              onClick={handleDemoLogin}
+              onClick={handleFillDemo}
               disabled={loading}
-              className="w-full mt-3 py-3 rounded-lg border border-blue-500 text-blue-200 hover:bg-blue-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-lg border border-purple-500/60 text-purple-300 hover:bg-purple-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium"
             >
-              {loading ? <Loader className="w-5 h-5 animate-spin" /> : "Try Demo Account"}
+              <Zap className="w-4 h-4" />
+              Use Demo Credentials
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="relative px-8 py-4">
-            <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent"></div>
-          </div>
-
-          {/* Register Link */}
-          <div className="px-8 pb-8">
-            <p className="text-center text-gray-400">
+          {/* Register link */}
+          <div className="px-8 pb-8 text-center">
+            <p className="text-gray-400 text-sm">
               Don't have an account?{" "}
-              <Link
-                to="/register"
-                className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
-              >
+              <Link to="/register" className="text-purple-400 hover:text-purple-300 font-semibold transition-colors">
                 Create one
               </Link>
             </p>
           </div>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 p-4 rounded-lg bg-blue-900/20 border border-blue-700/30">
-          <p className="text-xs text-blue-300 mb-2">
-            <strong>Demo Credentials:</strong>
-          </p>
-          <p className="text-xs text-blue-400">
-            Email: demo@example.com<br />
-            Password: Demo@12345
+        {/* Demo credentials info box */}
+        <div className="mt-5 p-4 rounded-xl bg-gray-800/60 border border-gray-700/50">
+          <p className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Demo Credentials</p>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Email</span>
+              <span className="text-xs text-gray-300 font-mono">{DEMO_EMAIL}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Password</span>
+              <span className="text-xs text-gray-300 font-mono">{DEMO_PASSWORD}</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Click <span className="text-purple-400">"Use Demo Credentials"</span> to auto-fill, then click Sign In.
           </p>
         </div>
       </div>

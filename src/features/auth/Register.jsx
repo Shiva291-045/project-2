@@ -1,213 +1,142 @@
-/**
- * Register Page
- * Production-ready registration with comprehensive validation and error handling
- */
-
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
-import {
-  validateEmail,
-  validatePassword,
-  validateName,
-  validateField,
-  passwordsMatch,
-  FORM_RULES,
-  trimFormValues,
-  getPasswordStrengthColor,
-  getPasswordStrengthPercent,
-} from "../../utils/validation";
 import toast from "react-hot-toast";
-import { Eye, EyeOff, Mail, Lock, User, Loader, CheckCircle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, Loader, CheckCircle, XCircle } from "lucide-react";
+
+// ── Password rules ──────────────────────────────────────────────────────────
+const PASSWORD_RULES = [
+  { id: "len",   label: "At least 8 characters",          test: (p) => p.length >= 8 },
+  { id: "upper", label: "One uppercase letter (A-Z)",      test: (p) => /[A-Z]/.test(p) },
+  { id: "lower", label: "One lowercase letter (a-z)",      test: (p) => /[a-z]/.test(p) },
+  { id: "num",   label: "One number (0-9)",                test: (p) => /\d/.test(p) },
+  { id: "spec",  label: "One special character (!@#$...)", test: (p) => /[^A-Za-z0-9]/.test(p) },
+];
+
+const getStrength = (password) => PASSWORD_RULES.filter((r) => r.test(password)).length;
+
+const STRENGTH_LABEL = ["", "Very Weak", "Weak", "Fair", "Strong", "Very Strong"];
+const STRENGTH_COLOR = ["", "bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
+const STRENGTH_TEXT  = ["", "text-red-400", "text-orange-400", "text-yellow-400", "text-blue-400", "text-green-400"];
 
 export const Register = () => {
   const navigate = useNavigate();
   const { register, error: authError, clearError } = useAuth();
 
-  // Form state
   const [formData, setFormData] = useState({
     displayName: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
-
-  const [fieldErrors, setFieldErrors] = useState({});
+  const [errors, setErrors]   = useState({});
   const [touched, setTouched] = useState({});
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword]        = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordStrength, setPasswordStrength] = useState(0);
 
-  // Clear auth error on component mount
-  useEffect(() => {
-    clearError?.();
-  }, [clearError]);
+  useEffect(() => { clearError?.(); }, [clearError]);
+  useEffect(() => { if (authError) toast.error(authError); }, [authError]);
 
-  // Display auth errors
-  useEffect(() => {
-    if (authError) {
-      toast.error(authError);
+  const strength = getStrength(formData.password);
+
+  // ── Field-level validation ──────────────────────────────────────────
+  const validateField = (name, value, allData = formData) => {
+    switch (name) {
+      case "displayName":
+        if (!value.trim())           return "Full name is required";
+        if (value.trim().length < 2) return "Name must be at least 2 characters";
+        if (value.trim().length > 50) return "Name must be under 50 characters";
+        return "";
+      case "email":
+        if (!value.trim())                       return "Email is required";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Enter a valid email address";
+        return "";
+      case "password":
+        if (!value)             return "Password is required";
+        if (value.length < 8)   return "Password must be at least 8 characters";
+        if (!/[A-Z]/.test(value)) return "Password needs at least one uppercase letter";
+        if (!/[0-9]/.test(value)) return "Password needs at least one number";
+        return "";
+      case "confirmPassword":
+        if (!value)                        return "Please confirm your password";
+        if (value !== allData.password)    return "Passwords do not match";
+        return "";
+      default:
+        return "";
     }
-  }, [authError]);
+  };
 
-  /**
-   * Handle field change with real-time validation
-   */
-  const handleFieldChange = (e) => {
+  const validateAll = (data = formData) => {
+    const errs = {};
+    ["displayName", "email", "password", "confirmPassword"].forEach((k) => {
+      const e = validateField(k, data[k], data);
+      if (e) errs[k] = e;
+    });
+    return errs;
+  };
+
+  // ── Handlers ────────────────────────────────────────────────────────
+  const handleChange = (e) => {
     const { name, value } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Update password strength
-    if (name === "password") {
-      const validation = validatePassword(value);
-      setPasswordStrength(validation.strength);
-    }
-
-    // Validate field if it's been touched
+    const updated = { ...formData, [name]: value };
+    setFormData(updated);
     if (touched[name]) {
-      if (name === "confirmPassword" && touched.password) {
-        // Check if passwords match
-        if (!passwordsMatch(formData.password, value)) {
-          setFieldErrors((prev) => ({
-            ...prev,
-            [name]: "Passwords do not match",
-          }));
-        } else {
-          setFieldErrors((prev) => ({
-            ...prev,
-            [name]: null,
-          }));
-        }
-      } else {
-        const validation = validateField(name, value, FORM_RULES);
-        setFieldErrors((prev) => ({
-          ...prev,
-          [name]: validation.error,
-        }));
-      }
+      setErrors((p) => ({ ...p, [name]: validateField(name, value, updated) }));
+    }
+    // Re-validate confirmPassword when password changes
+    if (name === "password" && touched.confirmPassword) {
+      setErrors((p) => ({ ...p, confirmPassword: validateField("confirmPassword", updated.confirmPassword, updated) }));
     }
   };
 
-  /**
-   * Handle field blur
-   */
-  const handleFieldBlur = (e) => {
+  const handleBlur = (e) => {
     const { name, value } = e.target;
-
-    setTouched((prev) => ({
-      ...prev,
-      [name]: true,
-    }));
-
-    if (name === "confirmPassword" && touched.password) {
-      if (!passwordsMatch(formData.password, value)) {
-        setFieldErrors((prev) => ({
-          ...prev,
-          [name]: "Passwords do not match",
-        }));
-      } else {
-        setFieldErrors((prev) => ({
-          ...prev,
-          [name]: null,
-        }));
-      }
-    } else {
-      const validation = validateField(name, value, FORM_RULES);
-      setFieldErrors((prev) => ({
-        ...prev,
-        [name]: validation.error,
-      }));
-    }
+    setTouched((p) => ({ ...p, [name]: true }));
+    setErrors((p) => ({ ...p, [name]: validateField(name, value) }));
   };
 
-  /**
-   * Validate entire form
-   */
-  const validateForm = () => {
-    const errors = {};
-    const trimmed = trimFormValues(formData);
-
-    // Validate name
-    const nameValidation = validateName(trimmed.displayName);
-    if (!nameValidation.isValid) {
-      errors.displayName = nameValidation.errors[0];
-    }
-
-    // Validate email
-    const emailValidation = validateEmail(trimmed.email);
-    if (!emailValidation.isValid) {
-      errors.email = emailValidation.error;
-    }
-
-    // Validate password
-    const passwordValidation = validatePassword(trimmed.password);
-    if (!passwordValidation.isValid) {
-      errors.password = passwordValidation.errors[0];
-    }
-
-    // Check password match
-    if (!passwordsMatch(trimmed.password, trimmed.confirmPassword)) {
-      errors.confirmPassword = "Passwords do not match";
-    }
-
-    return errors;
-  };
-
-  /**
-   * Handle form submission
-   */
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Mark all fields touched
+    setTouched({ displayName: true, email: true, password: true, confirmPassword: true });
 
-    // Validate form
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      toast.error("Please fix the errors below");
+    const errs = validateAll();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      toast.error("Please fix all errors before continuing");
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const trimmed = trimFormValues(formData);
-
-      // Call register function
       const result = await register(
-        trimmed.email,
-        trimmed.password,
-        trimmed.displayName
+        formData.email.trim(),
+        formData.password,
+        formData.displayName.trim()
       );
-
       if (result.success) {
-        toast.success("Account created successfully!");
         navigate("/dashboard", { replace: true });
       } else {
         toast.error(result.message || "Registration failed");
       }
-    } catch (err) {
-      console.error("Registration error:", err);
+    } catch {
       toast.error("An unexpected error occurred");
     } finally {
       setLoading(false);
     }
   };
 
-  const hasNameError = touched.displayName && fieldErrors.displayName;
-  const hasEmailError = touched.email && fieldErrors.email;
-  const hasPasswordError = touched.password && fieldErrors.password;
-  const hasConfirmPasswordError =
-    touched.confirmPassword && fieldErrors.confirmPassword;
+  // Helper for input border color
+  const borderClass = (field) => {
+    if (!touched[field]) return "border-gray-600/50";
+    return errors[field] ? "border-red-500/60 bg-red-500/10" : "border-green-500/50 bg-green-500/5";
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Header */}
+        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-600 mb-4 shadow-lg">
             <span className="text-white font-bold text-2xl">P</span>
@@ -215,204 +144,196 @@ export const Register = () => {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
             Join PrepAI
           </h1>
-          <p className="text-gray-400">
-            Start your AI-powered interview preparation
-          </p>
+          <p className="text-gray-400">Start your AI-powered interview preparation</p>
         </div>
 
-        {/* Form Card */}
+        {/* Card */}
         <div className="bg-gray-800/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden">
-          <form onSubmit={handleSubmit} className="p-8 space-y-5">
-            {/* Name Input */}
+          <form onSubmit={handleSubmit} className="p-8 space-y-5" noValidate>
+
+            {/* Full Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Full Name
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
               <div className="relative">
-                <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type="text"
                   name="displayName"
                   value={formData.displayName}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="John Doe"
-                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasNameError
-                      ? "border-red-500/50 bg-red-500/10"
-                      : "border-gray-600/50"
-                  }`}
+                  autoComplete="name"
+                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("displayName")}`}
                 />
               </div>
-              {hasNameError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.displayName}</p>
+              {touched.displayName && errors.displayName && (
+                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> {errors.displayName}
+                </p>
+              )}
+              {touched.displayName && !errors.displayName && formData.displayName && (
+                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Looks good!
+                </p>
               )}
             </div>
 
-            {/* Email Input */}
+            {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Email Address
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type="email"
                   name="email"
                   value={formData.email}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="you@example.com"
-                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasEmailError
-                      ? "border-red-500/50 bg-red-500/10"
-                      : "border-gray-600/50"
-                  }`}
+                  autoComplete="email"
+                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("email")}`}
                 />
               </div>
-              {hasEmailError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.email}</p>
+              {touched.email && errors.email && (
+                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> {errors.email}
+                </p>
+              )}
+              {touched.email && !errors.email && formData.email && (
+                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Valid email
+                </p>
               )}
             </div>
 
-            {/* Password Input */}
+            {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="••••••••"
-                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasPasswordError
-                      ? "border-red-500/50 bg-red-500/10"
-                      : "border-gray-600/50"
-                  }`}
+                  autoComplete="new-password"
+                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("password")}`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
 
-              {/* Password Strength Indicator */}
+              {/* Strength bar */}
               {formData.password && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-gray-400">Password Strength</span>
-                    <span className="text-xs font-medium text-gray-300">
-                      {["Very Weak", "Weak", "Fair", "Good", "Strong", "Very Strong"][
-                        passwordStrength
-                      ] || "Very Weak"}
-                    </span>
+                <div className="mt-2">
+                  <div className="flex gap-1 mb-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <div
+                        key={n}
+                        className={`h-1 flex-1 rounded-full transition-all ${
+                          n <= strength ? STRENGTH_COLOR[strength] : "bg-gray-700"
+                        }`}
+                      />
+                    ))}
                   </div>
-                  <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all ${getPasswordStrengthColor(
-                        passwordStrength
-                      )}`}
-                      style={{ width: `${getPasswordStrengthPercent(passwordStrength)}%` }}
-                    ></div>
-                  </div>
+                  <p className={`text-xs ${STRENGTH_TEXT[strength]}`}>
+                    {STRENGTH_LABEL[strength]}
+                  </p>
                 </div>
               )}
 
-              {hasPasswordError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.password}</p>
+              {/* Password rules checklist */}
+              {formData.password && (
+                <div className="mt-2 space-y-1">
+                  {PASSWORD_RULES.map((rule) => {
+                    const passed = rule.test(formData.password);
+                    return (
+                      <div key={rule.id} className={`flex items-center gap-1.5 text-xs ${passed ? "text-green-400" : "text-gray-500"}`}>
+                        {passed
+                          ? <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                          : <XCircle className="w-3 h-3 flex-shrink-0" />
+                        }
+                        {rule.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {touched.password && errors.password && (
+                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> {errors.password}
+                </p>
               )}
             </div>
 
-            {/* Confirm Password Input */}
+            {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Confirm Password
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
                   value={formData.confirmPassword}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="••••••••"
-                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                    hasConfirmPasswordError
-                      ? "border-red-500/50 bg-red-500/10"
-                      : "border-gray-600/50"
-                  }`}
+                  autoComplete="new-password"
+                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("confirmPassword")}`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  {showConfirmPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              {hasConfirmPasswordError && (
-                <p className="text-red-400 text-sm mt-2">{fieldErrors.confirmPassword}</p>
+              {touched.confirmPassword && errors.confirmPassword && (
+                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> {errors.confirmPassword}
+                </p>
               )}
-              {formData.confirmPassword &&
-                !hasConfirmPasswordError &&
-                passwordsMatch(formData.password, formData.confirmPassword) && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                    <p className="text-green-400 text-sm">Passwords match</p>
-                  </div>
-                )}
+              {touched.confirmPassword && !errors.confirmPassword && formData.confirmPassword && (
+                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Passwords match
+                </p>
+              )}
             </div>
 
-            {/* Submit Button */}
+            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
+              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
             >
               {loading && <Loader className="w-5 h-5 animate-spin" />}
               {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="relative px-8 py-4">
-            <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent"></div>
-          </div>
-
-          {/* Login Link */}
-          <div className="px-8 pb-8">
-            <p className="text-center text-gray-400">
+          {/* Login link */}
+          <div className="px-8 pb-8 text-center">
+            <p className="text-gray-400 text-sm">
               Already have an account?{" "}
-              <Link
-                to="/login"
-                className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
-              >
+              <Link to="/login" className="text-purple-400 hover:text-purple-300 font-semibold transition-colors">
                 Sign in
               </Link>
             </p>
           </div>
         </div>
 
-        {/* Terms */}
-        <p className="text-center text-xs text-gray-500 mt-6">
-          By registering, you agree to our Terms of Service and Privacy Policy
+        <p className="text-center text-xs text-gray-600 mt-4">
+          By registering you agree to our Terms of Service and Privacy Policy
         </p>
       </div>
     </div>
