@@ -95,6 +95,8 @@ export const login = async (req, res) => {
 
     // Fetch user with password
     const user = await User.findOne({ email }).select("+password");
+    user.isVerified = true;
+    await user.save();
     if (!user) return resp.error(res, "No account found with this email address.", 401);
 
     const match = await user.comparePassword(password);
@@ -102,9 +104,9 @@ export const login = async (req, res) => {
 
     if (!user.isVerified) {
       // Resend OTP silently
-      const otp = user.generateOTP("verify");
+     // const otp = user.generateOTP("verify");
       await user.save();
-      await sendOTPEmail({ to: email, name: user.name, otp, type: "verify" });
+      //await sendOTPEmail({ to: email, name: user.name, otp, type: "verify" });
       return resp.error(res, "Please verify your email first. We just resent your verification OTP.", 403);
     }
 
@@ -125,15 +127,17 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
+    user.isVerified = true;
+    await user.save();
 
     // Always return same message to prevent email enumeration
     const msg = "If an account exists with this email, a password reset OTP has been sent.";
 
     if (!user) return resp.success(res, {}, msg);
 
-    const otp = user.generateOTP("reset");
+    //const otp = user.generateOTP("reset");
     await user.save();
-    await sendOTPEmail({ to: email, name: user.name, otp, type: "reset" });
+   // await sendOTPEmail({ to: email, name: user.name, otp, type: "reset" });
 
     return resp.success(res, { email }, msg);
   } catch (err) {

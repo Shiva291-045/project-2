@@ -27,6 +27,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 const ALLOWED = [
   "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:5000",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
