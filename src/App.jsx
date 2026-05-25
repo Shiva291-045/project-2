@@ -8,6 +8,8 @@ import { useAuth } from "./hooks/useAuth";
 import { Landing }        from "./features/landing/Landing";
 import { Login }          from "./features/auth/Login";
 import { Register }       from "./features/auth/Register";
+import { VerifyEmail }    from "./features/auth/VerifyEmail";
+import { ForgotPassword } from "./features/auth/ForgotPassword";
 import { Dashboard }      from "./features/dashboard/Dashboard";
 import { InterviewRoom }  from "./features/interview/InterviewRoom";
 import { CodingPractice } from "./features/coding/CodingPractice";
@@ -26,22 +28,23 @@ const Spinner = () => (
   </div>
 );
 
-// Redirect authenticated users away from /login and /register
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  if (loading)          return <Spinner />;
-  if (isAuthenticated)  return <Navigate to="/dashboard" replace />;
+  if (loading) return <Spinner />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
   return children;
 };
 
 const AppRoutes = () => (
   <Routes>
     {/* Public */}
-    <Route path="/"         element={<Landing />} />
-    <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
-    <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+    <Route path="/"                element={<Landing />} />
+    <Route path="/login"           element={<PublicRoute><Login /></PublicRoute>} />
+    <Route path="/register"        element={<PublicRoute><Register /></PublicRoute>} />
+    <Route path="/verify-email"    element={<VerifyEmail />} />
+    <Route path="/forgot-password" element={<ForgotPassword />} />
 
-    {/* Protected — all render inside layout (Sidebar + Header) */}
+    {/* Protected */}
     <Route path="/dashboard"   element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
     <Route path="/interview"   element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
     <Route path="/coding"      element={<ProtectedRoute><CodingPractice /></ProtectedRoute>} />
@@ -50,7 +53,6 @@ const AppRoutes = () => (
     <Route path="/resume"      element={<ProtectedRoute><ResumeAnalyzer /></ProtectedRoute>} />
     <Route path="/profile"     element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
-    {/* Fallback */}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
 );
@@ -64,14 +66,8 @@ const App = () => (
           position="top-right"
           toastOptions={{
             duration: 4000,
-            style: {
-              background: "#1f2937",
-              color: "#f9fafb",
-              borderRadius: "12px",
-              border: "1px solid #374151",
-              fontSize: "14px",
-            },
-            success: { iconTheme: { primary: "#10b981", secondary: "#fff" }, duration: 3000 },
+            style: { background: "#1f2937", color: "#f9fafb", borderRadius: "12px", border: "1px solid #374151", fontSize: "14px" },
+            success: { iconTheme: { primary: "#10b981", secondary: "#fff" }, duration: 3500 },
             error:   { iconTheme: { primary: "#ef4444", secondary: "#fff" }, duration: 5000 },
           }}
         />

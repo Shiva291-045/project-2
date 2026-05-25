@@ -1,47 +1,46 @@
-import { auth } from "../config/firebase.js";
+import { verifyToken as jwtVerify } from "../utils/jwt.js";
+import User from "../models/User.js";
+import * as resp from "../utils/apiResponse.js";
 
-export const verifyToken = async (req, res, next) => {
-  let token = null;
+// ── Verify JWT + attach user to req ────────────────────────────────────────
+export const protect = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    token = authHeader?.split(" ")[1];
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith("Bearer "))
+      return resp.error(res, "Authentication required. Please log in.", 401);
 
-    if (!token || token === "null" || token === "undefined") {
-      // In local dev/fallback mode, let's gracefully allow a demo user bypass
-      console.log("No token provided - automatically using fallback demo user");
-      req.user = {
-        uid: "demo_user",
-        name: "Demo User",
-        email: "demo@example.com",
-      };
-      return next();
+    const token = header.split(" ")[1];
+    if (!token) return resp.error(res, "No token provided.", 401);
+
+    let decoded;
+    try {
+      decoded = jwtVerify(token);
+    } catch (err) {
+      if (err.name === "TokenExpiredError")
+        return resp.error(res, "Session expired. Please log in again.", 401);
+      return resp.error(res, "Invalid token.", 401);
     }
 
-    const decodedToken = await auth.verifyIdToken(token);
-    req.user = decodedToken;
+    const user = await User.findById(decoded.id).select("-password -otp -otpExpires");
+    if (!user) return resp.error(res, "User no longer exists.", 401);
+
+    req.user = user;
     next();
-  } catch (error) {
-    console.warn("Token verification error:", error.message);
-    
-    // Resilient fallback for demo tokens in any environment
-    if (token && (token.startsWith("demo_token_") || token === "demo_user")) {
-      const uid = token === "demo_user" ? "demo_user" : token.replace("demo_token_", "");
-      req.user = {
-        uid,
-        name: "Demo User",
-        email: "demo@example.com",
-      };
-      return next();
-    }
-    
-    res.status(401).json({ success: false, message: "Invalid token" });
+  } catch (err) {
+    return resp.error(res, "Authentication failed.", 401);
   }
 };
 
-export const handleError = (error, res) => {
-  console.error("Error:", error);
-  res.status(error.status || 500).json({
-    success: false,
-    message: error.message || "Internal Server Error",
-  });
+// ── Require verified email ──────────────────────────────────────────────────
+export const requireVerified = (req, res, next) => {
+  if (!req.user.isVerified)
+    return resp.error(res, "Please verify your email before continuing.", 403);
+  next();
+};
+
+// ── Admin only ──────────────────────────────────────────────────────────────
+export const adminOnly = (req, res, next) => {
+  if (req.user.role !== "admin")
+    return resp.error(res, "Access denied — admin only.", 403);
+  next();
 };

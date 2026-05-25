@@ -1,168 +1,179 @@
-import React, { createContext, useState, useCallback, useEffect } from "react";
-import { auth, db } from "../config/firebase";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  updateProfile as fbUpdateProfile,
-} from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import React, { createContext, useState, useCallback, useEffect, useRef } from "react";
+import api from "../services/apiClient";
 import toast from "react-hot-toast";
 
 export const AuthContext = createContext();
 
-// ── Map Firebase error codes to human-readable messages ────────────────────
-const getFirebaseError = (code) => {
-  const map = {
-    "auth/user-not-found":       "No account found with this email address.",
-    "auth/wrong-password":       "Incorrect password. Please try again.",
-    "auth/invalid-email":        "Please enter a valid email address.",
-    "auth/email-already-in-use": "An account with this email already exists. Please log in.",
-    "auth/weak-password":        "Password must be at least 6 characters.",
-    "auth/too-many-requests":    "Too many failed attempts. Please wait a few minutes and try again.",
-    "auth/network-request-failed": "Network error. Please check your connection.",
-    "auth/invalid-credential":   "Invalid email or password. Please check your credentials.",
-    "auth/user-disabled":        "This account has been disabled. Please contact support.",
-  };
-  return map[code] || "An unexpected error occurred. Please try again.";
+const TOKEN_KEY = "prepai_token";
+const USER_KEY  = "prepai_user";
+
+const loadCached = () => {
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; }
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]               = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user,            setUser]            = useState(loadCached);
+  const [loading,         setLoading]         = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(!!loadCached());
+  const [error,           setError]           = useState(null);
+  const initDone = useRef(false);
 
-  // ── Auth state listener ─────────────────────────────────────────────
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      try {
-        if (fbUser) {
-          setUser(fbUser);
-          setIsAuthenticated(true);
-          // Load Firestore profile
-          try {
-            const snap = await getDoc(doc(db, "users", fbUser.uid));
-            if (snap.exists()) {
-              setUserProfile(snap.data());
-            } else {
-              setUserProfile({
-                uid:   fbUser.uid,
-                name:  fbUser.displayName || "",
-                email: fbUser.email,
-              });
-            }
-          } catch {
-            setUserProfile({
-              uid:   fbUser.uid,
-              name:  fbUser.displayName || "",
-              email: fbUser.email,
-            });
-          }
-        } else {
-          setUser(null);
-          setUserProfile(null);
-          setIsAuthenticated(false);
-        }
-      } finally {
-        setLoading(false);
-      }
-    });
-    return unsubscribe;
+  // ── Persist user ────────────────────────────────────────────────────────────
+  const persist = useCallback((userData, token) => {
+    if (userData && token) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(userData));
+      setUser(userData);
+      setIsAuthenticated(true);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   }, []);
 
-  // ── Register ────────────────────────────────────────────────────────
-  const register = useCallback(async (email, password, displayName) => {
+  // ── Re-hydrate session on mount (verify token with /api/auth/me) ────────────
+  useEffect(() => {
+    if (initDone.current) return;
+    initDone.current = true;
+
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) { setLoading(false); return; }
+
+    api.get("/api/auth/me")
+      .then(({ data }) => {
+        persist(data.data.user, token);
+      })
+      .catch(() => {
+        persist(null, null);
+      })
+      .finally(() => setLoading(false));
+  }, [persist]);
+
+  const clearError = useCallback(() => setError(null), []);
+
+  // ── Register ────────────────────────────────────────────────────────────────
+  const register = useCallback(async (name, email, password) => {
     setError(null);
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      await fbUpdateProfile(result.user, { displayName });
-      const profile = {
-        uid:       result.user.uid,
-        name:      displayName,
-        email,
-        createdAt: new Date().toISOString(),
-        xp:        0,
-        streak:    0,
-        role:      "user",
-      };
-      try {
-        await setDoc(doc(db, "users", result.user.uid), profile);
-      } catch {}
-      setUserProfile(profile);
-      toast.success(`Welcome to PrepAI, ${displayName}! 🎉`);
-      return { success: true };
+      const { data } = await api.post("/api/auth/register", { name, email, password });
+      toast.success(data.message || "Account created! Please check your email.");
+      return { success: true, requiresVerification: true, email };
     } catch (err) {
-      const msg = getFirebaseError(err.code);
+      const msg = err.message || "Registration failed.";
       setError(msg);
       return { success: false, message: msg };
     }
   }, []);
 
-  // ── Login ───────────────────────────────────────────────────────────
+  // ── Login ────────────────────────────────────────────────────────────────────
   const login = useCallback(async (email, password) => {
     setError(null);
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const name = result.user.displayName || email.split("@")[0];
-      toast.success(`Welcome back, ${name}! 👋`);
+      const { data } = await api.post("/api/auth/login", { email, password });
+      persist(data.data.user, data.data.token);
+      toast.success(data.message || "Welcome back!");
       return { success: true };
     } catch (err) {
-      const msg = getFirebaseError(err.code);
+      const msg = err.message || "Login failed.";
       setError(msg);
-      return { success: false, message: msg, code: err.code };
+      // Surface whether account needs verification
+      const needsVerify = err.status === 403;
+      return { success: false, message: msg, needsVerification: needsVerify, email };
     }
-  }, []);
+  }, [persist]);
 
-  // ── Logout ──────────────────────────────────────────────────────────
-  const logout = useCallback(async () => {
-    try {
-      await signOut(auth);
-      toast.success("You've been logged out.");
-      return { success: true };
-    } catch {
-      toast.error("Logout failed. Please try again.");
-      return { success: false };
-    }
-  }, []);
-
-  // ── Reset password ──────────────────────────────────────────────────
-  const resetPassword = useCallback(async (email) => {
+  // ── Verify email OTP ─────────────────────────────────────────────────────────
+  const verifyEmail = useCallback(async (email, otp) => {
     setError(null);
     try {
-      await sendPasswordResetEmail(auth, email);
-      toast.success("Password reset link sent to your email!");
+      const { data } = await api.post("/api/auth/verify-email", { email, otp });
+      persist(data.data.user, data.data.token);
+      toast.success("Email verified! Welcome to PrepAI 🎉");
       return { success: true };
     } catch (err) {
-      const msg = getFirebaseError(err.code);
+      const msg = err.message || "Verification failed.";
+      setError(msg);
+      return { success: false, message: msg };
+    }
+  }, [persist]);
+
+  // ── Resend OTP ───────────────────────────────────────────────────────────────
+  const resendOTP = useCallback(async (email, type = "verify") => {
+    try {
+      const { data } = await api.post("/api/auth/resend-otp", { email, type });
+      toast.success(data.message || "OTP resent!");
+      return { success: true };
+    } catch (err) {
+      toast.error(err.message || "Failed to resend OTP.");
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  // ── Forgot password ──────────────────────────────────────────────────────────
+  const forgotPassword = useCallback(async (email) => {
+    try {
+      const { data } = await api.post("/api/auth/forgot-password", { email });
+      toast.success(data.message || "Password reset OTP sent!");
+      return { success: true };
+    } catch (err) {
+      toast.error(err.message || "Failed to send reset OTP.");
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  // ── Reset password ───────────────────────────────────────────────────────────
+  const resetPassword = useCallback(async (email, otp, newPassword) => {
+    setError(null);
+    try {
+      const { data } = await api.post("/api/auth/reset-password", { email, otp, newPassword });
+      toast.success(data.message || "Password reset successfully!");
+      return { success: true };
+    } catch (err) {
+      const msg = err.message || "Reset failed.";
       setError(msg);
       return { success: false, message: msg };
     }
   }, []);
 
-  // ── Update profile ──────────────────────────────────────────────────
+  // ── Logout ────────────────────────────────────────────────────────────────────
+  const logout = useCallback(() => {
+    persist(null, null);
+    toast.success("You've been logged out.");
+    return { success: true };
+  }, [persist]);
+
+  // ── Update profile ────────────────────────────────────────────────────────────
   const updateProfile = useCallback(async (updates) => {
-    if (!user) return { success: false };
     try {
-      await setDoc(doc(db, "users", user.uid), updates, { merge: true });
-      setUserProfile((p) => ({ ...p, ...updates }));
-      toast.success("Profile updated successfully!");
+      const { data } = await api.put("/api/auth/profile", updates);
+      setUser((p) => ({ ...p, ...data.data.user }));
+      localStorage.setItem(USER_KEY, JSON.stringify({ ...user, ...data.data.user }));
+      toast.success("Profile updated!");
       return { success: true };
-    } catch {
-      toast.error("Failed to update profile. Please try again.");
+    } catch (err) {
+      toast.error(err.message || "Failed to update profile.");
       return { success: false };
     }
   }, [user]);
 
-  const clearError = useCallback(() => setError(null), []);
-
   return (
     <AuthContext.Provider value={{
-      user, userProfile, loading, error, isAuthenticated,
-      register, login, logout, resetPassword, updateProfile, clearError,
+      user,
+      userProfile: user,
+      loading,
+      isAuthenticated,
+      error,
+      clearError,
+      register,
+      login,
+      verifyEmail,
+      resendOTP,
+      forgotPassword,
+      resetPassword,
+      logout,
+      updateProfile,
     }}>
       {children}
     </AuthContext.Provider>
