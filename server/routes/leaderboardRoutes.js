@@ -1,57 +1,57 @@
 import express from "express";
-import { verifyToken } from "../middleware/auth.js";
-import { db } from "../config/firebase.js";
+import { protect } from "../middleware/auth.js";
+import User from "../models/User.js";
+import * as resp from "../utils/apiResponse.js";
 
 const router = express.Router();
 
-// Get leaderboard
-router.get("/", verifyToken, async (req, res) => {
+// GET /api/leaderboard — top 100 users by XP (MongoDB, not Firebase)
+router.get("/", protect, async (req, res) => {
   try {
     const { timeframe = "global" } = req.query;
 
-    const users = await db.collection("users").orderBy("xp", "desc").limit(100).get();
+    const users = await User.find({ isVerified: true })
+      .sort({ xp: -1 })
+      .limit(100)
+      .select("name email avatar xp totalInterviews problemsSolved streak avgInterviewScore");
 
-    const leaderboard = users.docs.map((doc, index) => ({
+    const leaderboard = users.map((u, index) => ({
       rank: index + 1,
-      ...doc.data(),
+      name: u.name,
+      email: u.email,
+      avatar: u.avatar,
+      xp: u.xp,
+      totalInterviews: u.totalInterviews,
+      problemsSolved: u.problemsSolved,
+      streak: u.streak,
+      avgScore: u.avgInterviewScore,
     }));
 
-    res.json({ success: true, data: leaderboard });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return resp.success(res, { leaderboard, timeframe });
+  } catch (err) {
+    console.error("Leaderboard error:", err);
+    return resp.error(res, "Failed to fetch leaderboard.", 500);
   }
 });
 
-// Get user rank
-router.get("/rank", verifyToken, async (req, res) => {
+// GET /api/leaderboard/rank — current user's rank
+router.get("/rank", protect, async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user._id;
+    const userXP  = req.user.xp || 0;
 
-    const userDoc = await db.collection("users").doc(userId).get();
+    const [rank, total] = await Promise.all([
+      User.countDocuments({ isVerified: true, xp: { $gt: userXP } }),
+      User.countDocuments({ isVerified: true }),
+    ]);
 
-    if (!userDoc.exists) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    const userXP = userDoc.data().xp || 0;
-
-    const betterUsers = await db
-      .collection("users")
-      .where("xp", ">", userXP)
-      .get();
-
-    const rank = betterUsers.size + 1;
-
-    res.json({
-      success: true,
-      data: {
-        rank,
-        xp: userXP,
-        totalUsers: (await db.collection("users").count().get()).count,
-      },
+    return resp.success(res, {
+      rank: rank + 1,
+      xp: userXP,
+      totalUsers: total,
     });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    return resp.error(res, "Failed to fetch rank.", 500);
   }
 });
 

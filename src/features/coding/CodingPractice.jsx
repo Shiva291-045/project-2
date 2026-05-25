@@ -177,7 +177,7 @@ export const CodingPractice = () => {
     solvedHard:  ALL_PROBLEMS.filter((p) => p.difficulty === "Hard"   && solved.has(p.id)).length,
   }), [solved]);
 
-  const toggleSolved = useCallback((id, e) => {
+  const toggleSolved = useCallback(async (id, e) => {
     e?.stopPropagation();
     setSolved((prev) => {
       const next = new Set(prev);
@@ -185,6 +185,20 @@ export const CodingPractice = () => {
       saveSolved(next);
       return next;
     });
+    // Sync to backend (fire-and-forget, localStorage is source of truth for speed)
+    try {
+      const prob = ALL_PROBLEMS.find((p) => p.id === id);
+      if (prob) {
+        const token = localStorage.getItem("prepai_token");
+        if (token) {
+          await fetch("/api/coding/solved", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ problemId: id, title: prob.title, topic: prob.topic, difficulty: prob.difficulty }),
+          });
+        }
+      }
+    } catch { /* silent — localStorage already updated */ }
   }, []);
 
   const openEditor = (prob) => {

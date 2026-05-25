@@ -30,10 +30,10 @@ export const Header = () => {
   // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false); setProfileOpen(false); }, [location.pathname]);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     setProfileOpen(false);
-    await logout();
-    navigate("/");
+    logout();
+    navigate("/", { replace: true });
   };
 
   const navLinks = [

@@ -32,8 +32,7 @@
     "eject": "react-scripts eject",
     "server": "cd server && node server.js",
     "server:dev": "cd server && npm run dev",
-    "dev": "concurrently \"npm start\" \"npm run server:dev\" \"npm run watch:css\"",
-    "watch:css": "postcss src/index.css -o src/index.css --watch",
+    "dev": "concurrently \"npm start\" \"npm run server:dev\"",
     "install:all": "npm install && cd server && npm install && cd .."
   },
   "browserslist": {

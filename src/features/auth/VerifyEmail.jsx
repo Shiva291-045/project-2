@@ -20,7 +20,7 @@ export const VerifyEmail = () => {
   useEffect(() => {
     if (!email) navigate("/login");
     inputRefs.current[0]?.focus();
-  }, []);
+  }, [email, navigate]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -79,10 +79,23 @@ export const VerifyEmail = () => {
     if (result.success) setCooldown(60);
   };
 
-  // Auto-submit when all 6 digits filled
+  // Auto-submit when all 6 digits filled — use the code directly to avoid stale closure
   useEffect(() => {
-    if (otp.every(Boolean)) handleSubmit();
-  }, [otp]);
+    const code = otp.join("");
+    if (code.length !== 6 || !otp.every(Boolean)) return;
+    (async () => {
+      setLoading(true); setError("");
+      const result = await verifyEmail(email, code);
+      setLoading(false);
+      if (result.success) {
+        navigate("/dashboard", { replace: true });
+      } else {
+        setError(result.message || "Verification failed.");
+        setOtp(["", "", "", "", "", ""]);
+        inputRefs.current[0]?.focus();
+      }
+    })();
+  }, [otp]); // otp is the only trigger; verifyEmail/navigate/email are stable refs
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">

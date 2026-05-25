@@ -19,7 +19,7 @@ export const Login = () => {
   const [pendingVerify, setPendingVerify] = useState(location.state?.pendingVerify || false);
   const [verifyEmail,   setVerifyEmail]   = useState(location.state?.email || "");
 
-  useEffect(() => { clearError?.(); }, []);
+  useEffect(() => { clearError?.(); }, [clearError]);
 
   const validate = () => {
     const errs = { email: "", password: "", general: "" };

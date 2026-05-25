@@ -110,13 +110,18 @@ export const Register = () => {
 
     setLoading(true);
     try {
+      // AuthContext.register signature: (name, email, password)
       const result = await register(
+        formData.displayName.trim(),
         formData.email.trim(),
-        formData.password,
-        formData.displayName.trim()
+        formData.password
       );
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        // After registration, user must verify email — redirect to verify page
+        navigate("/verify-email", {
+          replace: true,
+          state: { email: formData.email.trim() },
+        });
       } else {
         toast.error(result.message || "Registration failed");
       }

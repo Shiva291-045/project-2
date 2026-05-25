@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Header } from "../../components/layout/Header";
 import { Sidebar } from "../../components/layout/Sidebar";
 import { Card, Container, Badge } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
+import api from "../../services/apiClient";
 import { Trophy, Medal, Star, Flame, TrendingUp, Crown } from "lucide-react";
 
 // Deterministic leaderboard seed (no API needed)
@@ -32,18 +33,40 @@ const RANK_ICONS = [Crown, Medal, Star];
 export const Leaderboard = () => {
   const { userProfile, user } = useAuth();
   const [tab, setTab] = useState("global"); // global | weekly
+  const [apiData, setApiData] = useState(null);
+  const [myRank, setMyRank] = useState(null);
+  const [loadingApi, setLoadingApi] = useState(true);
 
-  // Build a "You" entry from local data
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        const [lbRes, rankRes] = await Promise.all([
+          api.get("/api/leaderboard"),
+          api.get("/api/leaderboard/rank"),
+        ]);
+        setApiData(lbRes.data?.data?.leaderboard || null);
+        setMyRank(rankRes.data?.data || null);
+      } catch {
+        // Fall back to static demo data
+      } finally {
+        setLoadingApi(false);
+      }
+    };
+    fetchLeaderboard();
+  }, []);
+
+  // Build a "You" entry from API rank data or local fallback
   const myEntry = useMemo(() => {
     try {
       const history = JSON.parse(localStorage.getItem("prepai_interview_history") || "[]");
       const solved = JSON.parse(localStorage.getItem("prepai_solved_problems") || "[]").length;
       const scores = history.flatMap(s => s.scores || []);
       const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
+      const rank = myRank?.rank || "—";
       return {
-        rank: "—",
+        rank,
         name: userProfile?.name || user?.displayName || "You",
-        score: avg,
+        score: myRank?.xp || avg,
         solved,
         streak: Math.min(history.length, 7),
         badge: avg >= 80 ? "Advanced" : avg >= 60 ? "Intermediate" : "Beginner",
@@ -51,11 +74,15 @@ export const Leaderboard = () => {
         isMe: true,
       };
     } catch { return null; }
-  }, [userProfile, user]);
+  }, [userProfile, user, myRank]);
 
-  const data = tab === "weekly"
-    ? LEADERBOARD_DATA.slice(0, 5).map(d => ({ ...d, score: Math.max(d.score - 10, 50), solved: Math.round(d.solved * 0.3) }))
-    : LEADERBOARD_DATA;
+  const data = useMemo(() => {
+    // Prefer real API data; fall back to static seed
+    const source = (apiData && apiData.length > 0) ? apiData : (tab === "weekly"
+      ? LEADERBOARD_DATA.slice(0, 5).map(d => ({ ...d, score: Math.max(d.score - 10, 50), solved: Math.round(d.solved * 0.3) }))
+      : LEADERBOARD_DATA);
+    return source;
+  }, [apiData, tab]);
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">

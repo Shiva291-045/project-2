@@ -14,7 +14,7 @@ const loadCached = () => {
 export const AuthProvider = ({ children }) => {
   const [user,            setUser]            = useState(loadCached);
   const [loading,         setLoading]         = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(!!loadCached());
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!loadCached());
   const [error,           setError]           = useState(null);
   const initDone = useRef(false);
 
@@ -148,15 +148,18 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = useCallback(async (updates) => {
     try {
       const { data } = await api.put("/api/auth/profile", updates);
-      setUser((p) => ({ ...p, ...data.data.user }));
-      localStorage.setItem(USER_KEY, JSON.stringify({ ...user, ...data.data.user }));
+      setUser((prev) => {
+        const merged = { ...prev, ...data.data.user };
+        localStorage.setItem(USER_KEY, JSON.stringify(merged));
+        return merged;
+      });
       toast.success("Profile updated!");
       return { success: true };
     } catch (err) {
       toast.error(err.message || "Failed to update profile.");
       return { success: false };
     }
-  }, [user]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{

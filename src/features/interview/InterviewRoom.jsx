@@ -59,21 +59,20 @@ const getHistory = () => {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
 };
 
-/* ─── AI call ───────────────────────────────────────────────────────── */
+/* ─── AI call — proxied through backend to protect API key ──────────── */
 const callClaude = async (messages, systemPrompt) => {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const token = localStorage.getItem("prepai_token");
+  const res = await fetch("/api/interview/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages,
-    }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ messages, systemPrompt }),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
   const data = await res.json();
-  return data.content?.[0]?.text || "";
+  return data.data?.text || "";
 };
 
 const parseJSON = (text) => {
@@ -489,6 +488,27 @@ Format your response as JSON:
         completedAt: new Date().toISOString(),
       };
       saveHistory(session);
+
+      // Persist to backend (best-effort, localStorage remains source of truth)
+      try {
+        const token = localStorage.getItem("prepai_token");
+        if (token) {
+          await fetch("/api/interview/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              mode:       session.mode,
+              difficulty: session.difficulty,
+              role:       session.role,
+              duration:   timer,
+              scores:     session.scores || [],
+              transcript: session.transcript,
+              analysis,
+            }),
+          });
+        }
+      } catch { /* silent */ }
+
       setHistory(getHistory());
       setSessionData(session);
       setPhase("analysis");

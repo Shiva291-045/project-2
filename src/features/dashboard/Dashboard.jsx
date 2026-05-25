@@ -4,6 +4,7 @@ import { Card, Container, Badge, Button } from "../../components/ui";
 import { Header } from "../../components/layout/Header";
 import { Sidebar } from "../../components/layout/Sidebar";
 import { useAuth } from "../../hooks/useAuth";
+import api from "../../services/apiClient";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,13 +37,29 @@ export const Dashboard = () => {
   const { userProfile, user } = useAuth();
   const [interviewHistory, setInterviewHistory] = useState([]);
   const [solvedCount, setSolvedCount] = useState(0);
+  const [apiStats, setApiStats] = useState(null);
 
   useEffect(() => {
+    // Always load from localStorage immediately for instant UI
     setInterviewHistory(getInterviewHistory());
     setSolvedCount(getSolvedCount());
+    // Then try to enrich with server-side analytics
+    api.get("/api/analytics")
+      .then(({ data }) => { if (data?.data) setApiStats(data.data); })
+      .catch(() => {}); // silent fallback to localStorage data
   }, []);
 
   const stats = useMemo(() => {
+    // Prefer real server-side stats when available
+    if (apiStats) {
+      return {
+        avgScore:        apiStats.avgScore        || 0,
+        totalInterviews: apiStats.totalInterviews || interviewHistory.length,
+        solvedProblems:  apiStats.solvedProblems  || solvedCount,
+        streak:          apiStats.streak          || Math.min(interviewHistory.length, 7),
+        xp:              apiStats.xp              || 0,
+      };
+    }
     const scores = interviewHistory.flatMap((s) => s.scores || []);
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
     return {
@@ -50,8 +67,9 @@ export const Dashboard = () => {
       totalInterviews: interviewHistory.length,
       solvedProblems: solvedCount,
       streak: Math.min(interviewHistory.length, 7),
+      xp: 0,
     };
-  }, [interviewHistory, solvedCount]);
+  }, [interviewHistory, solvedCount, apiStats]);
 
   // Build score trend from history
   const scoreData = useMemo(() => {

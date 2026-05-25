@@ -13,8 +13,11 @@ export const getAnalytics = async (req, res) => {
       User.findById(uid),
     ]);
 
+    // scores[] are stored as 0–10; multiply by 10 to get 0–100 percentage
     const scores = interviews.flatMap((i) => i.scores || []);
-    const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
+    const avgScore = scores.length
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10)
+      : 0;
 
     const modeBreakdown = interviews.reduce((acc, i) => {
       acc[i.mode] = (acc[i.mode] || 0) + 1; return acc;

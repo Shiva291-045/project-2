@@ -5,11 +5,12 @@ import helmet     from "helmet";
 import morgan     from "morgan";
 import connectDB  from "./config/db.js";
 
-import authRoutes      from "./routes/authRoutes.js";
-import resumeRoutes    from "./routes/resumeRoutes.js";
-import interviewRoutes from "./routes/interviewRoutes.js";
-import codingRoutes    from "./routes/codingRoutes.js";
-import analyticsRoutes from "./routes/analyticsRoutes.js";
+import authRoutes        from "./routes/authRoutes.js";
+import resumeRoutes      from "./routes/resumeRoutes.js";
+import interviewRoutes   from "./routes/interviewRoutes.js";
+import codingRoutes      from "./routes/codingRoutes.js";
+import analyticsRoutes   from "./routes/analyticsRoutes.js";
+import leaderboardRoutes from "./routes/leaderboardRoutes.js";
 
 dotenv.config();
 
@@ -41,11 +42,12 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use("/api/auth",      authRoutes);
-app.use("/api/resume",    resumeRoutes);
-app.use("/api/interview", interviewRoutes);
-app.use("/api/coding",    codingRoutes);
-app.use("/api/analytics", analyticsRoutes);
+app.use("/api/auth",        authRoutes);
+app.use("/api/resume",      resumeRoutes);
+app.use("/api/interview",   interviewRoutes);
+app.use("/api/coding",      codingRoutes);
+app.use("/api/analytics",   analyticsRoutes);
+app.use("/api/leaderboard", leaderboardRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {

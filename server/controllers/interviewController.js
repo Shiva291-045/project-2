@@ -59,3 +59,46 @@ export const getInterview = async (req, res) => {
     return resp.error(res, "Failed to fetch interview.", 500);
   }
 };
+
+// ── POST /api/interview/ai — secure proxy to Anthropic API ───────────────────
+export const aiProxy = async (req, res) => {
+  try {
+    const { messages, systemPrompt } = req.body;
+    if (!messages || !Array.isArray(messages)) {
+      return resp.error(res, "Invalid request: messages array required.", 400);
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return resp.error(res, "AI service not configured. Please set ANTHROPIC_API_KEY.", 503);
+    }
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error("Anthropic API error:", response.status, errBody);
+      return resp.error(res, "AI service temporarily unavailable.", 502);
+    }
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || "";
+    return resp.success(res, { text });
+  } catch (err) {
+    console.error("AI proxy error:", err);
+    return resp.error(res, "AI service error.", 500);
+  }
+};

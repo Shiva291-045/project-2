@@ -1,7 +1,9 @@
 import axios from "axios";
 import toast from "react-hot-toast";
 
-const BASE = process.env.REACT_APP_API_URL || "http://localhost:5001";
+// In development CRA proxies /api/* to localhost:5001 via package.json "proxy" field.
+// In production set REACT_APP_API_URL to your backend URL.
+const BASE = process.env.REACT_APP_API_URL || "";
 
 const api = axios.create({
   baseURL: BASE,

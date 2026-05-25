@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "../../components/layout/Header";
 import { Sidebar } from "../../components/layout/Sidebar";
@@ -17,6 +17,11 @@ export const Profile = () => {
   const [saving,  setSaving]  = useState(false);
   const [name,    setName]    = useState(userProfile?.name || user?.displayName || "");
   const [nameErr, setNameErr] = useState("");
+
+  // Keep name input in sync when userProfile loads/changes
+  useEffect(() => {
+    setName(userProfile?.name || user?.displayName || "");
+  }, [userProfile?.name, user?.displayName]);
 
   const solvedCount = (() => {
     try { return JSON.parse(localStorage.getItem("prepai_solved_problems") || "[]").length; } catch { return 0; }
