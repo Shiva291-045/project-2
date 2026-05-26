@@ -1,7 +1,7 @@
 import axios from "axios";
 import toast from "react-hot-toast";
 
-// In development CRA proxies /api/* to localhost:5001 via package.json "proxy" field.
+// In development CRA proxies /api/* to https://project-2-jso2.onrender.com via package.json "proxy" field.
 // In production set REACT_APP_API_URL to your backend URL.
 const BASE = process.env.REACT_APP_API_URL || "";
 
