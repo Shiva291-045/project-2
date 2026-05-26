@@ -50,7 +50,7 @@ npm run dev
 
 This starts:
 - Frontend: http://localhost:5000
-- Backend: http://localhost:5001
+- Backend: https://project-2-jso2.onrender.com
 
 ## Project Structure Overview
 

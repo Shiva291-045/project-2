@@ -282,7 +282,7 @@ POST /api/resume/upload - Upload & analyze resume
 
 - [x] App compiles without errors
 - [x] Frontend runs on http://localhost:5000
-- [x] Backend runs on http://localhost:5001 (Node.js)
+- [x] Backend runs on https://project-2-jso2.onrender.com (Node.js)
 - [x] Login/Register working
 - [x] Dashboard displays correctly
 - [x] Code execution working
