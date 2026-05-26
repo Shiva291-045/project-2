@@ -39,7 +39,7 @@ const ALLOWED = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-app.use(cors({ origin: ALLOWED, credentials: true }));
+app.use(cors({ origin:'https://project-2-virid-alpha.vercel.app', credentials: true }));
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "20mb" }));
