@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 const BASE = process.env.REACT_APP_API_URL || "";
 
 const api = axios.create({
-  baseURL: BASE,
+  baseURL: 'https://project-2-jso2.onrender.com',
   timeout: 30000,
   headers: { "Content-Type": "application/json" },
 });
