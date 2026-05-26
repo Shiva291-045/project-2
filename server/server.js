@@ -21,6 +21,7 @@ dotenv.config({
 });
 console.log("KEY =", process.env.RESEND_API_KEY);
 const app  = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5001;
 
 
