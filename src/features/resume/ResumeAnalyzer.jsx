@@ -289,7 +289,7 @@ export const ResumeAnalyzer = () => {
                 {/* Section scores + radar */}
                 {SECTION_BARS.length > 0 && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card>
+                    <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                       <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <Star className="w-5 h-5 text-yellow-500" /> Section Breakdown
                       </h2>
@@ -297,7 +297,7 @@ export const ResumeAnalyzer = () => {
                         {SECTION_BARS.map((s) => <ScoreBar key={s.label} {...s} />)}
                       </div>
                     </div>
-                    <Card>
+                    <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                       <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Skill Radar</h2>
                       <ResponsiveContainer width="100%" height={200}>
                         <RadarChart data={radarData}>
@@ -313,7 +313,7 @@ export const ResumeAnalyzer = () => {
 
                 {/* Strengths + Improvements */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <Card>
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                       <CheckCircle className="w-5 h-5 text-green-500" /> Strengths
                     </h2>
@@ -326,7 +326,7 @@ export const ResumeAnalyzer = () => {
                       ))}
                     </div>
                   </div>
-                  <Card>
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-orange-500" /> Improvements
                     </h2>
@@ -343,7 +343,7 @@ export const ResumeAnalyzer = () => {
 
                 {/* Skills found */}
                 {analysis.skills?.length > 0 && (
-                  <Card>
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-purple-500" /> Detected Skills ({analysis.skills.length})
                     </h2>
@@ -355,7 +355,7 @@ export const ResumeAnalyzer = () => {
 
                 {/* Missing keywords */}
                 {analysis.missingKeywords?.length > 0 && (
-                  <Card>
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
                       <Zap className="w-5 h-5 text-yellow-500" /> Missing Keywords
                     </h2>
@@ -369,7 +369,7 @@ export const ResumeAnalyzer = () => {
                 {/* Trending skills + recommended tech */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {analysis.trendingSkills?.length > 0 && (
-                    <Card>
+                    <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                       <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-cyan-500" /> Trending Industry Skills
                       </h2>
@@ -379,7 +379,7 @@ export const ResumeAnalyzer = () => {
                     </div>
                   )}
                   {analysis.recommendedTech?.length > 0 && (
-                    <Card>
+                    <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                       <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                         <Code2 className="w-5 h-5 text-blue-500" /> Recommended Technologies
                       </h2>
@@ -392,7 +392,7 @@ export const ResumeAnalyzer = () => {
 
                 {/* AI suggestions */}
                 {analysis.suggestions?.length > 0 && (
-                  <Card>
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                       <Star className="w-5 h-5 text-purple-500" /> AI Improvement Suggestions
                     </h2>
