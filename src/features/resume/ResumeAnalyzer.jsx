@@ -19,16 +19,21 @@ const KEYWORDS  = ["bachelor","master","degree","university","college","engineer
 const NORESUME  = ["invoice","receipt","bill","total amount","gst","tax invoice","payment received","order id","unit price","date of purchase","terms and conditions","prescription","diagnosis","patient name","doctor","chapter","table of contents","bibliography","appendix","yours sincerely","dear sir"];
 
 const detectClient = (text) => {
-  if (!text || text.trim().length < 60)
-    return { ok: false, reason: "File appears empty or has too little text." };
+  // If text extraction failed or too short, still allow — server will do deeper check
+  if (!text || text.trim().length < 20)
+    return { ok: false, reason: "Could not read file content. Please ensure the PDF is not password-protected or try a .docx/.txt file." };
   const lower = text.toLowerCase();
+  // Hard reject only obvious non-resumes with many commercial flags
   const flags = NORESUME.filter((f) => lower.includes(f)).length;
-  if (flags >= 4) return { ok: false, reason: "This file looks like an invoice or receipt, not a resume. Please upload your CV." };
+  if (flags >= 5) return { ok: false, reason: "This file looks like an invoice, receipt, or non-resume document. Please upload your CV or resume." };
+  // Very lenient — if the file has any text at all (PDF extraction often misses sections)
+  // let the server do the real validation
   const sHits = SECTIONS.filter((s) => lower.includes(s));
   const kHits = KEYWORDS.filter((k) => lower.includes(k));
-  // Lenient: accept if ≥1 section OR ≥3 keywords
-  if (sHits.length < 1 && kHits.length < 3)
-    return { ok: false, reason: "The uploaded file does not appear to be a resume or CV. Please upload a document containing sections like Education, Skills, Experience, or Projects." };
+  // Accept if: ≥1 section OR ≥2 keywords OR file name looks like resume OR text > 200 chars
+  const looksLikeResume = /resume|cv|curriculum/i.test(text) || text.trim().length > 200;
+  if (sHits.length < 1 && kHits.length < 2 && !looksLikeResume)
+    return { ok: false, reason: "The uploaded file does not appear to be a resume. Please upload a document with sections like Education, Skills, or Experience." };
   return { ok: true, confidence: Math.min(100, 40 + sHits.length * 7 + kHits.length * 2), sections: sHits.slice(0,5) };
 };
 
@@ -99,7 +104,7 @@ export const ResumeAnalyzer = () => {
       if (file.type === "application/pdf") {
         try {
           const pdfjsLib = await import("pdfjs-dist/build/pdf");
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
           const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
           for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) {
             const page = await pdf.getPage(i);

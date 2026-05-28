@@ -8,6 +8,7 @@ import {
   Filter, LayoutGrid,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../services/apiClient";
 import rawData from "../../data/450DSA.json";
 
 // ── Parse + enrich 450DSA data ────────────────────────────────────────────
@@ -190,11 +191,7 @@ export const CodingPractice = () => {
       if (prob) {
         const token = localStorage.getItem("prepai_token");
         if (token) {
-          await fetch("/api/coding/solved", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ problemId: id, title: prob.title, topic: prob.topic, difficulty: prob.difficulty }),
-          });
+          await api.post("/api/coding/solved", { problemId: id, title: prob.title, topic: prob.topic, difficulty: prob.difficulty });
         }
       }
     } catch { /* silent — localStorage already updated */ }

@@ -8,6 +8,7 @@ import {
   Shield, Sparkles, ArrowRight, X, Star, Users, Infinity,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../services/apiClient";
 
 const FREE_FEATURES = [
   "5 AI mock interviews / month",
@@ -58,18 +59,13 @@ export const Pricing = () => {
       if (!ok) { toast.error("Payment gateway failed to load. Please try again."); setLoading(false); return; }
 
       // Create order from backend
-      const token = localStorage.getItem("prepai_token");
-      const orderRes = await fetch("/api/payment/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ plan: billing, amount: billing === "monthly" ? monthlyPrice * 100 : yearlyPrice * 100 }),
-      });
-
       let orderId = null;
-      if (orderRes.ok) {
-        const orderData = await orderRes.json();
-        orderId = orderData?.data?.orderId || orderData?.orderId;
-      }
+      try {
+        const orderRes = await api.post("/api/payment/create-order", {
+          plan: billing, amount: billing === "monthly" ? monthlyPrice * 100 : yearlyPrice * 100,
+        });
+        orderId = orderRes.data?.data?.orderId;
+      } catch {}
 
       const opts = {
         key: process.env.REACT_APP_RAZORPAY_KEY_ID || "rzp_test_placeholder",
@@ -87,17 +83,14 @@ export const Pricing = () => {
         modal: { backdropclose: false },
         handler: async (response) => {
           try {
-            const verRes = await fetch("/api/payment/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-              body: JSON.stringify({
+            try {
+              await api.post("/api/payment/verify", {
                 razorpay_order_id:   response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature:  response.razorpay_signature,
                 plan: billing,
-              }),
-            });
-            if (verRes.ok) {
+              });
+              if (true) {
               toast.success("🎉 Welcome to PrepAI Premium! Enjoy unlimited access.");
               setTimeout(() => navigate("/dashboard"), 1500);
             } else {

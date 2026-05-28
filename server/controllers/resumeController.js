@@ -7,20 +7,23 @@ const RESUME_KEYWORDS  = ["bachelor","master","degree","university","college","e
 const NON_RESUME_FLAGS = ["invoice","receipt","bill","total amount","gst","tax invoice","payment","order id","product","quantity","unit price","customer","vendor","date of purchase","terms and conditions","warranty","claim","prescription","diagnosis","patient","doctor","chapter","table of contents","bibliography","appendix","dear sir","to whom it may concern","as discussed","please find attached","regards","yours sincerely"];
 
 const detectResume = (text) => {
-  if (!text || text.trim().length < 80)
-    return { isResume: false, confidence: 0, reason: "The file appears to be empty or has very little text content." };
+  // Very short text = extraction failure, not necessarily invalid resume
+  if (!text || text.trim().length < 20)
+    return { isResume: false, confidence: 0, reason: "The file appears to be empty or password-protected. Please try a different file." };
 
   const lower = text.toLowerCase();
   const flagCount = NON_RESUME_FLAGS.filter((f) => lower.includes(f)).length;
 
-  if (flagCount >= 4)
+  // Only reject if overwhelmingly non-resume (5+ commercial flags)
+  if (flagCount >= 5)
     return { isResume: false, confidence: 0, reason: "This appears to be an invoice, receipt, or non-resume document. Please upload your actual CV or resume." };
 
   const sectionHits = RESUME_SECTIONS.filter((s) => lower.includes(s));
   const keywordHits = RESUME_KEYWORDS.filter((k) => lower.includes(k));
 
-  // Accept if ≥1 section OR ≥4 keywords (lenient for scanned/poorly-extracted PDFs)
-  if (sectionHits.length < 1 && keywordHits.length < 4) {
+  // Very lenient: accept if filename/text contains resume, OR ≥1 section, OR ≥2 keywords, OR text > 150 chars
+  const looksLikeResume = text.trim().length > 150 || /resume|curriculum vitae|cv/i.test(text);
+  if (sectionHits.length < 1 && keywordHits.length < 2 && !looksLikeResume) {
     return {
       isResume:   false,
       confidence: Math.min(35, sectionHits.length * 10 + keywordHits.length * 5),

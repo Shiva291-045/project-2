@@ -10,6 +10,7 @@ import {
   TrendingUp, ChevronRight, Star, Crown, Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../services/apiClient";
 
 /* ─── Modes ────────────────────────────────────────────────────── */
 const MODES = [
@@ -63,15 +64,8 @@ const QUESTION_BANKS = {
 
 /* ─── AI call ──────────────────────────────────────────────────── */
 const callAI = async (messages, system) => {
-  const token = localStorage.getItem("prepai_token");
-  const res = await fetch("/api/interview/ai", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ messages, systemPrompt: system }),
-  });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  const d = await res.json();
-  return d.data?.text || "";
+  const { data } = await api.post("/api/interview/ai", { messages, systemPrompt: system });
+  return data?.data?.text || "";
 };
 
 const saveHistory = (session) => {
