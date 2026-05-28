@@ -218,7 +218,7 @@ export const ResumeAnalyzer = () => {
             )}
 
             {!analysis && !loading && !valError ? (
-              <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className={`border-2 border-dashed cursor-pointer transition-all ${dragActive ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20 scale-[1.01]" : "border-gray-300 dark:border-gray-600 hover:border-purple-400"}`}
+              <div className={`glass rounded-2xl border-2 border-dashed cursor-pointer transition-all ${dragActive ? "border-neon-purple bg-brand-500/10 scale-[1.01]" : "border-[rgba(155,93,229,0.2)] hover:border-neon-purple/60"}`}
                 onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onClick={() => fileRef.current?.click()}>
                 <div className="py-16 text-center">
                   <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-100 to-cyan-100 dark:from-purple-900/40 dark:to-cyan-900/40 mb-5">
@@ -231,7 +231,7 @@ export const ResumeAnalyzer = () => {
                 </div>
               </div>
             ) : loading ? (
-              <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="py-16 text-center">
+              <div className="py-16 text-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative w-16 h-16">
                     <div className="absolute inset-0 rounded-full border-4 border-gray-200 dark:border-gray-700" />
@@ -246,7 +246,7 @@ export const ResumeAnalyzer = () => {
             ) : analysis ? (
               <div className="space-y-6">
                 {/* Hero: ATS score + preview controls */}
-                <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="bg-gradient-to-br from-gray-900 to-gray-800 text-white border-0 shadow-xl">
+                <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-6">
                   <div className="flex flex-col md:flex-row items-center gap-8">
                     <ATSRing score={analysis.atsScore} />
                     <div className="flex-1">
@@ -277,7 +277,7 @@ export const ResumeAnalyzer = () => {
                 </div>
 
                 {showPreview && previewUrl && (
-                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="p-0 overflow-hidden">
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                       <span className="font-medium text-gray-900 dark:text-white text-sm">Resume Preview</span>
                       <button onClick={() => setShowPreview(false)}><X className="w-5 h-5 text-gray-500" /></button>

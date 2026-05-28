@@ -243,7 +243,6 @@ export const CodingPractice = () => {
   // TOPICS VIEW
   if (view === "topics") return (
     <PageWrapper>
-        <main className="flex-1 overflow-auto">
           <div className="max-w-6xl mx-auto px-6 py-8">
             {/* Title + global stats */}
             <div className="mb-8">
@@ -418,9 +417,7 @@ export const CodingPractice = () => {
                 )}
               </div>
             </div>
-          </main>
-        </div>
-      </div>
+      </PageWrapper>
     );
   }
 
