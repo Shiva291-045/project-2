@@ -1,212 +1,158 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { Header } from "../../components/layout/Header";
-import { Sidebar } from "../../components/layout/Sidebar";
-import { Card, Container, Badge } from "../../components/ui";
+import React, { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+import { PageWrapper } from "../../components/PageWrapper";
+import { Badge } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
 import api from "../../services/apiClient";
-import { Trophy, Medal, Star, Flame, TrendingUp, Crown } from "lucide-react";
+import { Trophy, Star, Flame, Crown, Medal, TrendingUp, Users } from "lucide-react";
 
-// Deterministic leaderboard seed (no API needed)
-const LEADERBOARD_DATA = [
-  { rank: 1,  name: "Arjun Sharma",   score: 96, solved: 312, streak: 42, badge: "Expert",      avatar: "AS" },
-  { rank: 2,  name: "Priya Verma",    score: 93, solved: 289, streak: 31, badge: "Expert",      avatar: "PV" },
-  { rank: 3,  name: "Rahul Gupta",    score: 91, solved: 267, streak: 28, badge: "Advanced",    avatar: "RG" },
-  { rank: 4,  name: "Ananya Singh",   score: 88, solved: 244, streak: 22, badge: "Advanced",    avatar: "AS" },
-  { rank: 5,  name: "Vikram Nair",    score: 85, solved: 218, streak: 19, badge: "Advanced",    avatar: "VN" },
-  { rank: 6,  name: "Sneha Patel",    score: 83, solved: 201, streak: 17, badge: "Intermediate", avatar: "SP" },
-  { rank: 7,  name: "Karan Mehta",    score: 80, solved: 187, streak: 14, badge: "Intermediate", avatar: "KM" },
-  { rank: 8,  name: "Divya Rao",      score: 78, solved: 172, streak: 12, badge: "Intermediate", avatar: "DR" },
-  { rank: 9,  name: "Aditya Joshi",   score: 75, solved: 158, streak: 10, badge: "Beginner",    avatar: "AJ" },
-  { rank: 10, name: "Meera Krishnan", score: 72, solved: 143, streak: 8,  badge: "Beginner",    avatar: "MK" },
+const SEED_DATA = [
+  { rank:1,  name:"Arjun Sharma",    score:96, solved:312, streak:42, badge:"Expert",       avatar:"AS" },
+  { rank:2,  name:"Priya Verma",     score:93, solved:289, streak:31, badge:"Expert",       avatar:"PV" },
+  { rank:3,  name:"Rahul Gupta",     score:91, solved:267, streak:28, badge:"Advanced",     avatar:"RG" },
+  { rank:4,  name:"Ananya Singh",    score:88, solved:244, streak:22, badge:"Advanced",     avatar:"AS" },
+  { rank:5,  name:"Vikram Nair",     score:85, solved:218, streak:19, badge:"Advanced",     avatar:"VN" },
+  { rank:6,  name:"Sneha Patel",     score:83, solved:201, streak:17, badge:"Intermediate", avatar:"SP" },
+  { rank:7,  name:"Karan Mehta",     score:80, solved:187, streak:14, badge:"Intermediate", avatar:"KM" },
+  { rank:8,  name:"Divya Rao",       score:78, solved:172, streak:12, badge:"Intermediate", avatar:"DR" },
+  { rank:9,  name:"Aditya Joshi",    score:75, solved:158, streak:10, badge:"Beginner",     avatar:"AJ" },
+  { rank:10, name:"Meera Krishnan",  score:72, solved:143, streak:8,  badge:"Beginner",     avatar:"MK" },
 ];
 
-const BADGE_COLOR = {
-  Expert:       "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
-  Advanced:     "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
-  Intermediate: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  Beginner:     "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+const BADGE_STYLES = {
+  Expert:       "bg-amber-500/20 text-amber-300 border-amber-400/30",
+  Advanced:     "bg-brand-500/20 text-brand-300 border-brand-500/30",
+  Intermediate: "bg-neon-blue/20 text-neon-blue border-neon-blue/30",
+  Beginner:     "bg-gray-500/20 text-gray-400 border-gray-500/30",
 };
 
-const RANK_COLORS = ["text-yellow-500", "text-gray-400", "text-amber-600"];
-const RANK_ICONS = [Crown, Medal, Star];
+const RANK_STYLES = [
+  "bg-gradient-to-br from-amber-400 to-yellow-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]",
+  "bg-gradient-to-br from-gray-300 to-gray-400 shadow-[0_0_10px_rgba(156,163,175,0.4)]",
+  "bg-gradient-to-br from-amber-600 to-orange-600 shadow-[0_0_10px_rgba(180,83,9,0.4)]",
+];
+
+const AVATAR_GRADIENTS = [
+  "from-brand-500 to-neon-blue","from-neon-blue to-neon-cyan","from-neon-cyan to-neon-pink",
+  "from-neon-pink to-brand-500","from-amber-500 to-orange-500","from-green-500 to-neon-cyan",
+];
 
 export const Leaderboard = () => {
-  const { userProfile, user } = useAuth();
-  const [tab, setTab] = useState("global"); // global | weekly
-  const [apiData, setApiData] = useState(null);
-  const [myRank, setMyRank] = useState(null);
-  const [loadingApi, setLoadingApi] = useState(true);
+  const { user, userProfile } = useAuth();
+  const [entries, setEntries] = useState(SEED_DATA);
+  const [filter,  setFilter]  = useState("all");
+  const [loading, setLoading] = useState(true);
+  const displayName = userProfile?.name || user?.displayName || user?.email?.split("@")[0] || "You";
+  const initials    = displayName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0,2);
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      try {
-        const [lbRes, rankRes] = await Promise.all([
-          api.get("/api/leaderboard"),
-          api.get("/api/leaderboard/rank"),
-        ]);
-        setApiData(lbRes.data?.data?.leaderboard || null);
-        setMyRank(rankRes.data?.data || null);
-      } catch {
-        // Fall back to static demo data
-      } finally {
-        setLoadingApi(false);
-      }
-    };
-    fetchLeaderboard();
+    api.get("/api/leaderboard")
+      .then(({ data }) => { if (data?.data?.length) setEntries(data.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  // Build a "You" entry from API rank data or local fallback
-  const myEntry = useMemo(() => {
-    try {
-      const history = JSON.parse(localStorage.getItem("prepai_interview_history") || "[]");
-      const solved = JSON.parse(localStorage.getItem("prepai_solved_problems") || "[]").length;
-      const scores = history.flatMap(s => s.scores || []);
-      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
-      const rank = myRank?.rank || "—";
-      return {
-        rank,
-        name: userProfile?.name || user?.displayName || "You",
-        score: myRank?.xp || avg,
-        solved,
-        streak: Math.min(history.length, 7),
-        badge: avg >= 80 ? "Advanced" : avg >= 60 ? "Intermediate" : "Beginner",
-        avatar: (userProfile?.name || "You")[0].toUpperCase(),
-        isMe: true,
-      };
-    } catch { return null; }
-  }, [userProfile, user, myRank]);
+  const history = (() => { try { return JSON.parse(localStorage.getItem("prepai_interview_history") || "[]"); } catch { return []; } })();
+  const myScore = history.length ? Math.round(history.flatMap(s=>s.scores||[]).reduce((a,b,_,arr)=>a+b/arr.length,0)*10) : 0;
 
-  const data = useMemo(() => {
-    // Prefer real API data; fall back to static seed
-    const source = (apiData && apiData.length > 0) ? apiData : (tab === "weekly"
-      ? LEADERBOARD_DATA.slice(0, 5).map(d => ({ ...d, score: Math.max(d.score - 10, 50), solved: Math.round(d.solved * 0.3) }))
-      : LEADERBOARD_DATA);
-    return source;
-  }, [apiData, tab]);
+  const top3 = entries.slice(0,3);
+  const rest  = entries.slice(3);
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64">
-        <Header />
-        <main className="flex-1 overflow-auto">
-          <Container className="py-8 max-w-4xl">
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-                <Trophy className="w-9 h-9 text-yellow-500" /> Leaderboard
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400">Top performers in the PrepAI community</p>
-            </div>
+    <PageWrapper>
+      {/* Header */}
+      <motion.div initial={{ opacity:0, y:-10 }} animate={{ opacity:1, y:0 }} className="mb-8">
+        <h1 className="font-display text-3xl font-extrabold text-white flex items-center gap-3">
+          <Trophy className="w-8 h-8 text-amber-400" /> Leaderboard
+        </h1>
+        <p className="text-gray-400 mt-1 text-sm">Top performers this month · Updated daily</p>
+      </motion.div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 mb-6">
-              {["global", "weekly"].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`px-5 py-2 rounded-xl text-sm font-medium transition-all capitalize ${
-                    tab === t
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-purple-300"
-                  }`}
-                >
-                  {t} Rankings
-                </button>
-              ))}
-            </div>
-
-            {/* Top 3 podium */}
-            <div className="flex items-end justify-center gap-4 mb-8">
-              {[data[1], data[0], data[2]].map((player, podiumIdx) => {
-                const heights = ["h-28", "h-36", "h-24"];
-                const colors = ["from-gray-400 to-gray-500", "from-yellow-400 to-yellow-600", "from-amber-500 to-amber-700"];
-                const posLabels = ["2nd", "1st", "3rd"];
-                return (
-                  <div key={player.rank} className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                      {player.avatar}
-                    </div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white text-center max-w-[80px] truncate">{player.name}</p>
-                    <p className="text-xs text-gray-500">{player.score}%</p>
-                    <div className={`w-20 ${heights[podiumIdx]} rounded-t-xl bg-gradient-to-t ${colors[podiumIdx]} flex items-start justify-center pt-2`}>
-                      <span className="text-white font-bold text-lg">{posLabels[podiumIdx]}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Full table */}
-            <Card className="p-0 overflow-hidden">
-              {/* Your rank (if logged in) */}
-              {myEntry && myEntry.score > 0 && (
-                <div className="flex items-center gap-4 px-6 py-4 bg-purple-50 dark:bg-purple-900/20 border-b border-purple-200 dark:border-purple-800">
-                  <span className="text-sm font-bold text-purple-600 w-8 text-center">{myEntry.rank}</span>
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-600 to-cyan-600 flex items-center justify-center text-white font-bold text-sm">
-                    {myEntry.avatar}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-white text-sm">{myEntry.name} <span className="text-purple-500 text-xs">(You)</span></p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BADGE_COLOR[myEntry.badge]}`}>{myEntry.badge}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-right">
-                    <div><p className="font-bold text-gray-900 dark:text-white">{myEntry.score}%</p><p className="text-xs text-gray-500">Avg Score</p></div>
-                    <div><p className="font-bold text-gray-900 dark:text-white">{myEntry.solved}</p><p className="text-xs text-gray-500">Solved</p></div>
-                    <div className="flex items-center gap-1"><Flame className="w-4 h-4 text-orange-500" /><p className="font-bold text-gray-900 dark:text-white">{myEntry.streak}</p></div>
-                  </div>
-                </div>
-              )}
-
-              {/* Table header */}
-              <div className="grid grid-cols-[2.5rem_1fr_6rem_6rem_6rem] gap-4 px-6 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <span className="text-center">#</span>
-                <span>Player</span>
-                <span className="text-right">Avg Score</span>
-                <span className="text-right">Solved</span>
-                <span className="text-right">Streak</span>
+      {/* Podium */}
+      <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.1 }}
+        className="flex items-end justify-center gap-4 mb-10">
+        {[top3[1], top3[0], top3[2]].map((entry, i) => {
+          if (!entry) return null;
+          const heights = ["h-28","h-36","h-24"];
+          const sizes   = ["w-14 h-14","w-16 h-16","w-12 h-12"];
+          const textSizes = ["text-lg","text-xl","text-base"];
+          const rankIdx = i === 1 ? 0 : i === 0 ? 1 : 2;
+          return (
+            <motion.div key={entry.rank}
+              initial={{ opacity:0, y:30 }} animate={{ opacity:1, y:0 }}
+              transition={{ delay: 0.15 + i*0.08 }}
+              className="flex flex-col items-center gap-3"
+            >
+              <div className={`${sizes[i]} rounded-2xl bg-gradient-to-br ${AVATAR_GRADIENTS[rankIdx]} flex items-center justify-center font-bold text-white shadow-lg ${textSizes[i]}`}>
+                {entry.avatar}
               </div>
+              <p className="text-xs text-gray-300 font-medium text-center max-w-[80px] truncate">{entry.name.split(" ")[0]}</p>
+              <div className={`${heights[i]} w-20 rounded-t-2xl ${RANK_STYLES[rankIdx]} flex flex-col items-center justify-start pt-3`}>
+                <span className="text-white font-display font-extrabold text-lg">#{entry.rank}</span>
+                <span className="text-white/80 text-xs">{entry.score}%</span>
+              </div>
+            </motion.div>
+          );
+        })}
+      </motion.div>
 
-              {data.map((player, i) => {
-                const RankIcon = i < 3 ? RANK_ICONS[i] : null;
-                return (
-                  <div
-                    key={player.rank}
-                    className="grid grid-cols-[2.5rem_1fr_6rem_6rem_6rem] gap-4 items-center px-6 py-4 border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
-                  >
-                    <div className="flex justify-center">
-                      {RankIcon
-                        ? <RankIcon className={`w-5 h-5 ${RANK_COLORS[i]}`} />
-                        : <span className="text-sm font-bold text-gray-500 dark:text-gray-400">{player.rank}</span>
-                      }
-                    </div>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                        {player.avatar}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{player.name}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BADGE_COLOR[player.badge]}`}>{player.badge}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`font-bold text-sm ${player.score >= 90 ? "text-green-500" : player.score >= 75 ? "text-yellow-500" : "text-gray-700 dark:text-gray-300"}`}>
-                        {player.score}%
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">{player.solved}</p>
-                    </div>
-                    <div className="flex items-center justify-end gap-1">
-                      <Flame className="w-4 h-4 text-orange-500" />
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">{player.streak}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </Card>
-          </Container>
-        </main>
-      </div>
-    </div>
+      {/* Table */}
+      <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
+        className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] overflow-hidden">
+        <div className="px-6 py-4 border-b border-[rgba(155,93,229,0.08)] flex items-center justify-between">
+          <h3 className="font-display font-semibold text-white">Rankings</h3>
+          <div className="flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-gray-500" />
+            <span className="text-xs text-gray-500">{entries.length} participants</span>
+          </div>
+        </div>
+        <div className="divide-y divide-[rgba(155,93,229,0.06)]">
+          {rest.map((entry, i) => (
+            <motion.div key={entry.rank}
+              initial={{ opacity:0, x:-20 }} animate={{ opacity:1, x:0 }}
+              transition={{ delay: 0.35 + i*0.04 }}
+              className="flex items-center gap-4 px-6 py-4 hover:bg-white/3 transition-colors"
+            >
+              <div className="w-8 text-center">
+                <span className="font-display font-bold text-gray-400 text-sm">#{entry.rank}</span>
+              </div>
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length]} flex items-center justify-center text-white text-sm font-bold`}>
+                {entry.avatar}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">{entry.name}</p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className={`text-xs px-2 py-0.5 rounded-lg border ${BADGE_STYLES[entry.badge]}`}>{entry.badge}</span>
+                  <span className="text-xs text-gray-600 flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" />{entry.streak}d</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-display font-bold text-white">{entry.score}%</p>
+                <p className="text-xs text-gray-500">{entry.solved} solved</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* My position */}
+      <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.5 }}
+        className="mt-4 flex items-center gap-4 px-6 py-4 glass rounded-2xl border border-brand-500/25 bg-brand-500/5">
+        <div className="w-8 text-center">
+          <span className="font-display font-bold text-gray-400 text-sm">You</span>
+        </div>
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-neon-blue flex items-center justify-center text-white text-sm font-bold">
+          {initials}
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-white">{displayName}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Your current position</p>
+        </div>
+        <div className="text-right">
+          <p className="font-display font-bold text-neon-purple">{myScore || "—"}%</p>
+          <p className="text-xs text-gray-500">avg score</p>
+        </div>
+      </motion.div>
+    </PageWrapper>
   );
 };

@@ -1,346 +1,147 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useAuth } from "../../hooks/useAuth";
-import toast from "react-hot-toast";
-import { Eye, EyeOff, Mail, Lock, User, Loader, CheckCircle, XCircle } from "lucide-react";
-
-// ── Password rules ──────────────────────────────────────────────────────────
-const PASSWORD_RULES = [
-  { id: "len",   label: "At least 8 characters",          test: (p) => p.length >= 8 },
-  { id: "upper", label: "One uppercase letter (A-Z)",      test: (p) => /[A-Z]/.test(p) },
-  { id: "lower", label: "One lowercase letter (a-z)",      test: (p) => /[a-z]/.test(p) },
-  { id: "num",   label: "One number (0-9)",                test: (p) => /\d/.test(p) },
-  { id: "spec",  label: "One special character (!@#$...)", test: (p) => /[^A-Za-z0-9]/.test(p) },
-];
-
-const getStrength = (password) => PASSWORD_RULES.filter((r) => r.test(password)).length;
-
-const STRENGTH_LABEL = ["", "Very Weak", "Weak", "Fair", "Strong", "Very Strong"];
-const STRENGTH_COLOR = ["", "bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
-const STRENGTH_TEXT  = ["", "text-red-400", "text-orange-400", "text-yellow-400", "text-blue-400", "text-green-400"];
+import { Eye, EyeOff, Mail, Lock, User, Loader2, AlertCircle, ArrowRight, Check } from "lucide-react";
+import { Button } from "../../components/ui";
 
 export const Register = () => {
   const navigate = useNavigate();
-  const { register, error: authError, clearError } = useAuth();
-
-  const [formData, setFormData] = useState({
-    displayName: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [errors, setErrors]   = useState({});
-  const [touched, setTouched] = useState({});
+  const { register } = useAuth();
+  const [form, setForm]       = useState({ name: "", email: "", password: "", confirm: "" });
+  const [showPw, setShowPw]   = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword]        = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError]     = useState("");
+  const [touched, setTouched] = useState({});
 
-  useEffect(() => { clearError?.(); }, [clearError]);
-  useEffect(() => { if (authError) toast.error(authError); }, [authError]);
-
-  const strength = getStrength(formData.password);
-
-  // ── Field-level validation ──────────────────────────────────────────
-  const validateField = (name, value, allData = formData) => {
-    switch (name) {
-      case "displayName":
-        if (!value.trim())           return "Full name is required";
-        if (value.trim().length < 2) return "Name must be at least 2 characters";
-        if (value.trim().length > 50) return "Name must be under 50 characters";
-        return "";
-      case "email":
-        if (!value.trim())                       return "Email is required";
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Enter a valid email address";
-        return "";
-      case "password":
-        if (!value)             return "Password is required";
-        if (value.length < 8)   return "Password must be at least 8 characters";
-        if (!/[A-Z]/.test(value)) return "Password needs at least one uppercase letter";
-        if (!/[0-9]/.test(value)) return "Password needs at least one number";
-        return "";
-      case "confirmPassword":
-        if (!value)                        return "Please confirm your password";
-        if (value !== allData.password)    return "Passwords do not match";
-        return "";
-      default:
-        return "";
-    }
+  const pwStrength = (pw) => {
+    let s = 0;
+    if (pw.length >= 8) s++;
+    if (/[A-Z]/.test(pw)) s++;
+    if (/[0-9]/.test(pw)) s++;
+    if (/[^A-Za-z0-9]/.test(pw)) s++;
+    return s;
   };
+  const strength = pwStrength(form.password);
+  const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"][strength];
+  const strengthColor = ["", "bg-red-500", "bg-amber-500", "bg-blue-500", "bg-neon-cyan"][strength];
 
-  const validateAll = (data = formData) => {
-    const errs = {};
-    ["displayName", "email", "password", "confirmPassword"].forEach((k) => {
-      const e = validateField(k, data[k], data);
-      if (e) errs[k] = e;
-    });
-    return errs;
-  };
-
-  // ── Handlers ────────────────────────────────────────────────────────
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    const updated = { ...formData, [name]: value };
-    setFormData(updated);
-    if (touched[name]) {
-      setErrors((p) => ({ ...p, [name]: validateField(name, value, updated) }));
-    }
-    // Re-validate confirmPassword when password changes
-    if (name === "password" && touched.confirmPassword) {
-      setErrors((p) => ({ ...p, confirmPassword: validateField("confirmPassword", updated.confirmPassword, updated) }));
-    }
-  };
-
-  const handleBlur = (e) => {
-    const { name, value } = e.target;
-    setTouched((p) => ({ ...p, [name]: true }));
-    setErrors((p) => ({ ...p, [name]: validateField(name, value) }));
+  const validate = () => {
+    if (!form.name.trim())                          return "Full name is required.";
+    if (form.name.trim().length < 2)               return "Name must be at least 2 characters.";
+    if (!form.email.trim())                         return "Email is required.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return "Enter a valid email.";
+    if (!form.password)                             return "Password is required.";
+    if (form.password.length < 6)                  return "Password must be at least 6 characters.";
+    if (form.password !== form.confirm)             return "Passwords do not match.";
+    return "";
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // Mark all fields touched
-    setTouched({ displayName: true, email: true, password: true, confirmPassword: true });
-
-    const errs = validateAll();
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      toast.error("Please fix all errors before continuing");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // AuthContext.register signature: (name, email, password)
-      const result = await register(
-        formData.displayName.trim(),
-        formData.email.trim(),
-        formData.password
-      );
-      if (result.success) {
-        // After registration, user must verify email — redirect to verify page
-        navigate("/verify-email", {
-          replace: true,
-          state: { email: formData.email.trim() },
-        });
-      } else {
-        toast.error(result.message || "Registration failed");
-      }
-    } catch {
-      toast.error("An unexpected error occurred");
-    } finally {
-      setLoading(false);
+    const err = validate();
+    if (err) { setError(err); return; }
+    setLoading(true); setError("");
+    const result = await register(form.name.trim(), form.email.trim().toLowerCase(), form.password);
+    setLoading(false);
+    if (result.success) {
+      navigate("/verify-email", { state: { email: form.email.trim().toLowerCase() } });
+    } else {
+      setError(result.message || "Registration failed.");
     }
   };
 
-  // Helper for input border color
-  const borderClass = (field) => {
-    if (!touched[field]) return "border-gray-600/50";
-    return errors[field] ? "border-red-500/60 bg-red-500/10" : "border-green-500/50 bg-green-500/5";
-  };
+  const field = (key, label, type, placeholder, Icon) => (
+    <div>
+      <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
+      <div className="relative">
+        <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <input
+          type={type} value={form[key]}
+          onChange={e => setForm(v => ({ ...v, [key]: e.target.value }))}
+          onBlur={() => setTouched(v => ({ ...v, [key]: true }))}
+          placeholder={placeholder}
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-card border border-[rgba(155,93,229,0.2)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/60 focus:shadow-[0_0_0_3px_rgba(123,47,247,0.15)] transition-all duration-200"
+        />
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        {/* Logo */}
+    <div className="min-h-screen bg-surface flex items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 grid-bg opacity-40" />
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[500px] rounded-full bg-brand-500/8 blur-3xl" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+        className="w-full max-w-md relative z-10"
+      >
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-600 mb-4 shadow-lg">
-            <span className="text-white font-bold text-2xl">P</span>
-          </div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-            Join PrepAI
-          </h1>
-          <p className="text-gray-400">Start your AI-powered interview preparation</p>
+          <motion.img
+            src="/logo.png" alt="PrepAI"
+            className="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-brand"
+            animate={{ y: [0, -6, 0] }} transition={{ duration: 4, repeat: Infinity }}
+          />
+          <h1 className="font-display text-3xl font-extrabold text-white">Create your account</h1>
+          <p className="text-gray-500 mt-1 text-sm">Already have one? <Link to="/login" className="text-neon-purple hover:text-brand-300 transition-colors">Sign in</Link></p>
         </div>
 
-        {/* Card */}
-        <div className="bg-gray-800/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden">
-          <form onSubmit={handleSubmit} className="p-8 space-y-5" noValidate>
+        <div className="glass-strong rounded-3xl p-8 border border-[rgba(155,93,229,0.2)] shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-5 flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm"
+            >
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </motion.div>
+          )}
 
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type="text"
-                  name="displayName"
-                  value={formData.displayName}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  placeholder="John Doe"
-                  autoComplete="name"
-                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("displayName")}`}
-                />
-              </div>
-              {touched.displayName && errors.displayName && (
-                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" /> {errors.displayName}
-                </p>
-              )}
-              {touched.displayName && !errors.displayName && formData.displayName && (
-                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" /> Looks good!
-                </p>
-              )}
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {field("name",  "Full Name",  "text",     "Jane Smith",       User)}
+            {field("email", "Email",      "email",    "you@company.com",  Mail)}
 
-            {/* Email */}
+            {/* Password with strength */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className={`w-full pl-12 pr-4 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("email")}`}
+                  type={showPw ? "text" : "password"} value={form.password}
+                  onChange={e => setForm(v => ({ ...v, password: e.target.value }))}
+                  placeholder="Min. 6 characters"
+                  className="w-full pl-10 pr-11 py-3 rounded-xl bg-surface-card border border-[rgba(155,93,229,0.2)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/60 focus:shadow-[0_0_0_3px_rgba(123,47,247,0.15)] transition-all duration-200"
                 />
-              </div>
-              {touched.email && errors.email && (
-                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" /> {errors.email}
-                </p>
-              )}
-              {touched.email && !errors.email && formData.email && (
-                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" /> Valid email
-                </p>
-              )}
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("password")}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-
-              {/* Strength bar */}
-              {formData.password && (
+              {form.password && (
                 <div className="mt-2">
                   <div className="flex gap-1 mb-1">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <div
-                        key={n}
-                        className={`h-1 flex-1 rounded-full transition-all ${
-                          n <= strength ? STRENGTH_COLOR[strength] : "bg-gray-700"
-                        }`}
-                      />
+                    {[1,2,3,4].map(n => (
+                      <div key={n} className={`h-1 flex-1 rounded-full transition-all duration-300 ${strength >= n ? strengthColor : "bg-white/10"}`} />
                     ))}
                   </div>
-                  <p className={`text-xs ${STRENGTH_TEXT[strength]}`}>
-                    {STRENGTH_LABEL[strength]}
-                  </p>
+                  <p className="text-xs text-gray-500">Strength: <span className="text-gray-300">{strengthLabel}</span></p>
                 </div>
-              )}
-
-              {/* Password rules checklist */}
-              {formData.password && (
-                <div className="mt-2 space-y-1">
-                  {PASSWORD_RULES.map((rule) => {
-                    const passed = rule.test(formData.password);
-                    return (
-                      <div key={rule.id} className={`flex items-center gap-1.5 text-xs ${passed ? "text-green-400" : "text-gray-500"}`}>
-                        {passed
-                          ? <CheckCircle className="w-3 h-3 flex-shrink-0" />
-                          : <XCircle className="w-3 h-3 flex-shrink-0" />
-                        }
-                        {rule.label}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {touched.password && errors.password && (
-                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" /> {errors.password}
-                </p>
               )}
             </div>
 
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  className={`w-full pl-12 pr-12 py-3 rounded-lg bg-gray-700/50 border text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 ${borderClass("confirmPassword")}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-              {touched.confirmPassword && errors.confirmPassword && (
-                <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" /> {errors.confirmPassword}
-                </p>
-              )}
-              {touched.confirmPassword && !errors.confirmPassword && formData.confirmPassword && (
-                <p className="text-green-400 text-xs mt-1.5 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" /> Passwords match
-                </p>
-              )}
-            </div>
+            {field("confirm", "Confirm Password", showPw ? "text" : "password", "Repeat password", Lock)}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
-            >
-              {loading && <Loader className="w-5 h-5 animate-spin" />}
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
+            <Button type="submit" variant="primary" size="lg" className="w-full mt-2" disabled={loading}>
+              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating account...</> : <>Create account <ArrowRight className="w-4 h-4" /></>}
+            </Button>
           </form>
-
-          {/* Login link */}
-          <div className="px-8 pb-8 text-center">
-            <p className="text-gray-400 text-sm">
-              Already have an account?{" "}
-              <Link to="/login" className="text-purple-400 hover:text-purple-300 font-semibold transition-colors">
-                Sign in
-              </Link>
-            </p>
-          </div>
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">
-          By registering you agree to our Terms of Service and Privacy Policy
+          By registering, you agree to our{" "}
+          <a href="#" className="text-gray-500 hover:text-gray-400">Terms of Service</a> and{" "}
+          <a href="#" className="text-gray-500 hover:text-gray-400">Privacy Policy</a>.
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 };

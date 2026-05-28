@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useAuth } from "../../hooks/useAuth";
-import { Eye, EyeOff, Mail, Lock, Loader2, AlertCircle, CheckCircle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Loader2, AlertCircle, ArrowRight, Sparkles } from "lucide-react";
+import { Button } from "../../components/ui";
 import toast from "react-hot-toast";
 
 export const Login = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
   const { login, clearError } = useAuth();
-
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [errors,   setErrors]   = useState({ email: "", password: "", general: "" });
   const [touched,  setTouched]  = useState({ email: false, password: false });
-  // If redirected here after registration
   const [pendingVerify, setPendingVerify] = useState(location.state?.pendingVerify || false);
-  const [verifyEmail,   setVerifyEmail]   = useState(location.state?.email || "");
 
   useEffect(() => { clearError?.(); }, [clearError]);
 
@@ -26,110 +25,141 @@ export const Login = () => {
     if (!email.trim())                              errs.email    = "Email is required.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Enter a valid email.";
     if (!password)                                  errs.password = "Password is required.";
-    else if (password.length < 6)                   errs.password = "Password must be at least 6 characters.";
+    else if (password.length < 6)                   errs.password = "At least 6 characters.";
     return errs;
   };
-
-  const hasErrors = (e) => Object.values(e).some(Boolean);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setTouched({ email: true, password: true });
     const errs = validate();
-    if (hasErrors(errs)) { setErrors(errs); return; }
-
-    setLoading(true);
-    setErrors({ email: "", password: "", general: "" });
-
+    if (Object.values(errs).some(Boolean)) { setErrors(errs); return; }
+    setLoading(true); setErrors({ email: "", password: "", general: "" });
     const result = await login(email.trim().toLowerCase(), password);
     setLoading(false);
-
     if (result.success) {
       navigate(location.state?.from || "/dashboard", { replace: true });
+    } else if (result.needsVerification) {
+      navigate("/verify-email", { state: { email: email.trim().toLowerCase() } });
     } else {
-      if (result.needsVerification) {
-        setPendingVerify(true);
-        setVerifyEmail(email.trim().toLowerCase());
-        setErrors({ email: "", password: "", general: "" });
-        navigate("/verify-email", { state: { email: email.trim().toLowerCase() } });
-      } else if (result.message?.toLowerCase().includes("email")) {
-        setErrors({ email: result.message, password: "", general: "" });
-      } else if (result.message?.toLowerCase().includes("password")) {
-        setErrors({ email: "", password: result.message, general: "" });
-      } else {
-        setErrors({ email: "", password: "", general: result.message });
-      }
+      setErrors({ email: "", password: "", general: result.message || "Login failed." });
     }
   };
 
-  const cls = (field) => `w-full pl-11 pr-4 py-3 rounded-xl bg-gray-700/60 border text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${touched[field] && errors[field] ? "border-red-500/70 bg-red-500/10" : "border-gray-600/50"}`;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-600 to-cyan-600 mb-4 shadow-xl hover:scale-105 transition-transform">
-            <span className="text-white font-bold text-2xl">P</span>
-          </Link>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-1">Welcome Back</h1>
-          <p className="text-gray-400 text-sm">Sign in to your PrepAI account</p>
-        </div>
+    <div className="min-h-screen bg-surface flex relative overflow-hidden">
+      {/* Background */}
+      <div className="absolute inset-0 grid-bg opacity-40" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-brand-500/8 blur-3xl" />
+      <div className="absolute bottom-0 right-0 w-64 h-64 rounded-full bg-neon-cyan/5 blur-3xl" />
 
-        <div className="bg-gray-800/60 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl">
-          <form onSubmit={handleSubmit} className="p-8 space-y-5" noValidate>
-            {errors.general && (
-              <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-                <p className="text-red-300 text-sm">{errors.general}</p>
+      {/* Left decorative panel (desktop) */}
+      <div className="hidden lg:flex lg:w-1/2 relative flex-col items-center justify-center p-16">
+        <motion.div
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center"
+        >
+          <motion.img
+            src="/logo.png" alt="PrepAI"
+            className="w-28 h-28 rounded-3xl mx-auto mb-8 shadow-[0_0_60px_rgba(123,47,247,0.5)]"
+            animate={{ y: [0, -12, 0] }} transition={{ duration: 5, repeat: Infinity }}
+          />
+          <h2 className="font-display text-4xl font-extrabold mb-4">
+            Welcome back to<br /><span className="gradient-text">PrepAI</span>
+          </h2>
+          <p className="text-gray-400 mb-10 leading-relaxed">Your AI-powered interview coach is ready.<br />Let's continue your preparation journey.</p>
+          <div className="space-y-3 text-left max-w-xs mx-auto">
+            {["Dynamic AI follow-up questions", "Detailed performance analytics", "450+ DSA problems with hints", "Real interviewer simulation"].map(t => (
+              <div key={t} className="flex items-center gap-3 glass rounded-xl px-4 py-2.5 border border-[rgba(155,93,229,0.1)]">
+                <div className="w-2 h-2 rounded-full bg-neon-cyan shadow-[0_0_6px_rgba(0,245,212,0.8)]" />
+                <span className="text-sm text-gray-300">{t}</span>
               </div>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Right: form */}
+      <div className="flex-1 flex items-center justify-center p-6 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="w-full max-w-md"
+        >
+          {/* Mobile logo */}
+          <div className="lg:hidden text-center mb-8">
+            <img src="/logo.png" alt="PrepAI" className="w-16 h-16 rounded-2xl mx-auto mb-3 shadow-brand" />
+            <h1 className="font-display text-2xl font-bold gradient-text">PrepAI</h1>
+          </div>
+
+          <div className="glass-strong rounded-3xl p-8 border border-[rgba(155,93,229,0.2)] shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
+            <div className="mb-8">
+              <h2 className="font-display text-2xl font-bold text-white">Sign in</h2>
+              <p className="text-gray-500 mt-1 text-sm">Don't have an account? <Link to="/register" className="text-neon-purple hover:text-brand-300 transition-colors">Create one free</Link></p>
+            </div>
+
+            {errors.general && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm"
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                {errors.general}
+              </motion.div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); if (touched.email) setErrors((p) => ({ ...p, email: "" })); }} onBlur={() => setTouched((p) => ({ ...p, email: true }))} placeholder="you@example.com" autoComplete="email" className={cls("email")} />
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">Email address</label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="email" value={email}
+                    onChange={e => { setEmail(e.target.value); if (touched.email) setErrors(v => ({ ...v, email: "" })); }}
+                    onBlur={() => setTouched(v => ({ ...v, email: true }))}
+                    placeholder="you@company.com"
+                    className={`w-full pl-10 pr-4 py-3 rounded-xl bg-surface-card border text-white placeholder-gray-600 focus:outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(123,47,247,0.15)] ${errors.email ? "border-red-500/60" : "border-[rgba(155,93,229,0.2)] focus:border-neon-purple/60"}`}
+                  />
+                </div>
+                {errors.email && <p className="mt-1.5 text-xs text-red-400">{errors.email}</p>}
               </div>
-              {touched.email && errors.email && <p className="flex items-center gap-1 text-red-400 text-xs mt-1.5"><AlertCircle className="w-3 h-3" />{errors.email}</p>}
+
+              {/* Password */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium text-gray-300">Password</label>
+                  <Link to="/forgot-password" className="text-xs text-neon-purple hover:text-brand-300 transition-colors">Forgot password?</Link>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type={showPw ? "text" : "password"} value={password}
+                    onChange={e => { setPassword(e.target.value); if (touched.password) setErrors(v => ({ ...v, password: "" })); }}
+                    onBlur={() => setTouched(v => ({ ...v, password: true }))}
+                    placeholder="••••••••"
+                    className={`w-full pl-10 pr-11 py-3 rounded-xl bg-surface-card border text-white placeholder-gray-600 focus:outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(123,47,247,0.15)] ${errors.password ? "border-red-500/60" : "border-[rgba(155,93,229,0.2)] focus:border-neon-purple/60"}`}
+                  />
+                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {errors.password && <p className="mt-1.5 text-xs text-red-400">{errors.password}</p>}
+              </div>
+
+              <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</> : <>Sign in <ArrowRight className="w-4 h-4" /></>}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-xs text-gray-600">By signing in, you agree to our <a href="#" className="text-gray-500 hover:text-gray-400">Terms</a> and <a href="#" className="text-gray-500 hover:text-gray-400">Privacy Policy</a>.</p>
             </div>
-
-            <div>
-              <div className="flex justify-between mb-1.5">
-                <label className="text-sm font-medium text-gray-300">Password</label>
-                <Link to="/forgot-password" className="text-xs text-purple-400 hover:text-purple-300 transition-colors">Forgot password?</Link>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input type={showPw ? "text" : "password"} value={password} onChange={(e) => { setPassword(e.target.value); if (touched.password) setErrors((p) => ({ ...p, password: "" })); }} onBlur={() => setTouched((p) => ({ ...p, password: true }))} placeholder="••••••••" autoComplete="current-password" className={`${cls("password")} pr-11`} />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {touched.password && errors.password && <p className="flex items-center gap-1 text-red-400 text-xs mt-1.5"><AlertCircle className="w-3 h-3" />{errors.password}</p>}
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700 text-white font-semibold text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg mt-2">
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Signing in…</> : "Sign In"}
-            </button>
-          </form>
-
-          <div className="px-8 pb-8 text-center border-t border-gray-700/50 pt-5 space-y-3">
-            <p className="text-gray-400 text-sm">
-              Don't have an account?{" "}
-              <Link to="/register" className="text-purple-400 hover:text-purple-300 font-semibold">Create one free</Link>
-            </p>
           </div>
-        </div>
-
-        {/* Demo hint */}
-        <div className="mt-5 p-4 rounded-xl bg-gray-800/40 border border-gray-700/40 text-center">
-          <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Demo Account</p>
-          <p className="text-xs text-gray-400 font-mono">demo@prepai.com · Demo@12345</p>
-          <button onClick={() => { setEmail("demo@prepai.com"); setPassword("Demo@12345"); setErrors({ email: "", password: "", general: "" }); setTouched({}); toast("Demo credentials filled!", { icon: "💡" }); }}
-            className="mt-2 text-xs text-purple-400 hover:text-purple-300 underline underline-offset-2">
-            Fill demo credentials
-          </button>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

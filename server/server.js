@@ -13,6 +13,7 @@ import interviewRoutes   from "./routes/interviewRoutes.js";
 import codingRoutes      from "./routes/codingRoutes.js";
 import analyticsRoutes   from "./routes/analyticsRoutes.js";
 import leaderboardRoutes from "./routes/leaderboardRoutes.js";
+import paymentRoutes     from "./routes/paymentRoutes.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -57,6 +58,7 @@ app.use("/api/interview",   interviewRoutes);
 app.use("/api/coding",      codingRoutes);
 app.use("/api/analytics",   analyticsRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/payment",    paymentRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {

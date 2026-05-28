@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "./ThemeContext";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./hooks/useAuth";
+import { LoadingScreen } from "./components/LoadingScreen";
 
 import { Landing }        from "./features/landing/Landing";
 import { Login }          from "./features/auth/Login";
@@ -17,34 +18,25 @@ import { Analytics }      from "./features/analytics/Analytics";
 import { Leaderboard }    from "./features/leaderboard/Leaderboard";
 import { ResumeAnalyzer } from "./features/resume/ResumeAnalyzer";
 import { Profile }        from "./features/profile/Profile";
+import { Pricing }        from "./features/pricing/Pricing";
 import ProtectedRoute     from "./components/ProtectedRoute";
-
-const Spinner = () => (
-  <div className="flex items-center justify-center min-h-screen bg-gray-900">
-    <div className="relative w-14 h-14">
-      <div className="absolute inset-0 rounded-full border-4 border-gray-700" />
-      <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-600 animate-spin" />
-    </div>
-  </div>
-);
 
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  if (loading) return <Spinner />;
+  if (loading) return <LoadingScreen message="Initializing PrepAI..." />;
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
   return children;
 };
 
 const AppRoutes = () => (
   <Routes>
-    {/* Public */}
     <Route path="/"                element={<Landing />} />
     <Route path="/login"           element={<PublicRoute><Login /></PublicRoute>} />
     <Route path="/register"        element={<PublicRoute><Register /></PublicRoute>} />
     <Route path="/verify-email"    element={<VerifyEmail />} />
     <Route path="/forgot-password" element={<ForgotPassword />} />
+    <Route path="/pricing"         element={<Pricing />} />
 
-    {/* Protected */}
     <Route path="/dashboard"   element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
     <Route path="/interview"   element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
     <Route path="/coding"      element={<ProtectedRoute><CodingPractice /></ProtectedRoute>} />
@@ -66,9 +58,17 @@ const App = () => (
           position="top-right"
           toastOptions={{
             duration: 4000,
-            style: { background: "#1f2937", color: "#f9fafb", borderRadius: "12px", border: "1px solid #374151", fontSize: "14px" },
-            success: { iconTheme: { primary: "#10b981", secondary: "#fff" }, duration: 3500 },
-            error:   { iconTheme: { primary: "#ef4444", secondary: "#fff" }, duration: 5000 },
+            style: {
+              background: "#0f0f24",
+              color: "#e8e8f0",
+              borderRadius: "14px",
+              border: "1px solid rgba(155,93,229,0.25)",
+              fontSize: "14px",
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(123,47,247,0.1)",
+            },
+            success: { iconTheme: { primary: "#00f5d4", secondary: "#0f0f24" } },
+            error:   { iconTheme: { primary: "#f15bb5", secondary: "#0f0f24" } },
           }}
         />
       </Router>

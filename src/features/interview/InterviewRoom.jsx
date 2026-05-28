@@ -1,683 +1,495 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../hooks/useAuth";
-import { Header } from "../../components/layout/Header";
-import { Sidebar } from "../../components/layout/Sidebar";
-import { Card, Button, Badge, Spinner } from "../../components/ui";
+import { PageWrapper } from "../../components/PageWrapper";
+import { Button, Badge } from "../../components/ui";
 import {
   Mic, MicOff, Send, StopCircle, RotateCcw, CheckCircle,
   AlertTriangle, Clock, Brain, MessageSquare, Code2, Users,
-  TrendingUp, ChevronRight, Star, Volume2
+  TrendingUp, ChevronRight, Star, Crown, Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-/* ─── Constants ────────────────────────────────────────────────────── */
+/* ─── Modes ────────────────────────────────────────────────────── */
 const MODES = [
-  { id: "technical",   label: "Technical",   icon: Code2,         color: "from-blue-500 to-cyan-500",    desc: "DSA, system design, coding problems" },
-  { id: "behavioral",  label: "Behavioral",  icon: Users,         color: "from-purple-500 to-pink-500",  desc: "STAR method, teamwork, leadership" },
-  { id: "hr",          label: "HR Round",    icon: MessageSquare, color: "from-green-500 to-emerald-500", desc: "Salary, culture fit, career goals" },
+  { id: "technical",  label: "Technical",  icon: Code2,         color: "from-neon-blue to-neon-cyan",   desc: "DSA, system design, coding" },
+  { id: "behavioral", label: "Behavioral", icon: Users,         color: "from-brand-500 to-neon-pink",   desc: "STAR method, leadership" },
+  { id: "hr",         label: "HR Round",   icon: MessageSquare, color: "from-neon-cyan to-neon-purple",  desc: "Culture fit, career goals" },
 ];
-const DIFFICULTIES = ["Easy", "Medium", "Hard"];
-const DURATION_OPTIONS = [5, 10, 15, 20]; // minutes
+const DIFFICULTIES    = ["Easy", "Medium", "Hard"];
+const DURATION_OPTIONS = [5, 10, 15, 20];
+const STORAGE_KEY      = "prepai_interview_history";
 
-const OPENING_QUESTIONS = {
+/* ─── Diverse opening question banks ───────────────────────────── */
+const QUESTION_BANKS = {
   technical: [
     "Tell me about yourself and your technical background.",
     "What's a challenging technical problem you've solved recently?",
-    "Explain the difference between SQL and NoSQL databases.",
-    "What is the time complexity of quicksort and when would you use it?",
-    "Describe the concept of RESTful APIs.",
+    "Explain the difference between SQL and NoSQL databases and when you'd choose each.",
+    "What is the time complexity of quicksort, and when would you prefer it over mergesort?",
+    "How does garbage collection work in your primary programming language?",
+    "Describe REST vs GraphQL — what are the trade-offs?",
+    "What is the CAP theorem and how does it affect distributed system design?",
+    "Walk me through how you'd approach designing a URL shortener like bit.ly.",
+    "Explain the difference between a process and a thread.",
+    "How would you debug a production performance issue with no prior context?",
   ],
   behavioral: [
-    "Tell me about a time you faced a difficult challenge at work.",
-    "Describe a situation where you had to work under tight deadlines.",
-    "Tell me about a time you disagreed with your manager.",
-    "Describe a project you're most proud of.",
-    "Give an example of when you showed leadership.",
+    "Tell me about a time you faced a difficult technical challenge and how you solved it.",
+    "Describe a situation where you had to work with a very tight deadline.",
+    "Give me an example of a time you disagreed with a team decision. What did you do?",
+    "Tell me about a project you're most proud of and your specific contribution.",
+    "Describe a situation where you had to learn something completely new under pressure.",
+    "Tell me about a time you received critical feedback. How did you respond?",
+    "Give an example of when you had to influence someone without direct authority.",
+    "Describe a failure you experienced. What did you learn from it?",
+    "Tell me about a time you mentored or helped a colleague grow.",
+    "Give an example of how you prioritize when everything feels urgent.",
   ],
   hr: [
-    "Tell me about yourself.",
-    "Why do you want to work at our company?",
-    "Where do you see yourself in 5 years?",
-    "What are your salary expectations?",
-    "Why are you leaving your current job?",
+    "Tell me about yourself and what brings you here today.",
+    "Why are you interested in this specific role and company?",
+    "Where do you see your career in the next 3–5 years?",
+    "What are your salary expectations and how did you arrive at that number?",
+    "What motivates you most in your work?",
+    "How do you handle stress and pressure at work?",
+    "What do you consider your greatest professional strength?",
+    "What's an area you're actively working to improve?",
+    "How do you prefer to receive feedback from managers?",
+    "Why are you looking to leave your current role?",
   ],
 };
 
-const STORAGE_KEY = "prepai_interview_history";
-
-const saveHistory = (session) => {
-  try {
-    const history = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    history.unshift({ ...session, savedAt: new Date().toISOString() });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, 20)));
-  } catch {}
-};
-
-const getHistory = () => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-};
-
-/* ─── AI call — proxied through backend to protect API key ──────────── */
-const callClaude = async (messages, systemPrompt) => {
+/* ─── AI call ──────────────────────────────────────────────────── */
+const callAI = async (messages, system) => {
   const token = localStorage.getItem("prepai_token");
   const res = await fetch("/api/interview/ai", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ messages, systemPrompt }),
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ messages, systemPrompt: system }),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
-  const data = await res.json();
-  return data.data?.text || "";
+  const d = await res.json();
+  return d.data?.text || "";
 };
 
-const parseJSON = (text) => {
+const saveHistory = (session) => {
   try {
-    const m = text.match(/```json\s*([\s\S]*?)```/) || [null, text];
-    return JSON.parse(m[1] || text);
-  } catch { return null; }
+    const h = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    h.unshift({ ...session, savedAt: new Date().toISOString() });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(0, 20)));
+  } catch {}
 };
 
-/* ─── Setup Screen ──────────────────────────────────────────────────── */
+/* ─── Setup Screen ──────────────────────────────────────────────── */
 const SetupScreen = ({ onStart }) => {
-  const [mode, setMode] = useState("behavioral");
+  const [mode,       setMode]       = useState("behavioral");
   const [difficulty, setDifficulty] = useState("Medium");
-  const [duration, setDuration] = useState(10);
-  const [role, setRole] = useState("Software Engineer");
+  const [duration,   setDuration]   = useState(10);
+  const [role,       setRole]       = useState("Software Engineer");
+  const { userProfile } = useAuth();
+  const isPremium = userProfile?.isPremium;
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64">
-        <Header />
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-3xl mx-auto px-6 py-10">
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">AI Interview</h1>
-              <p className="text-gray-500 dark:text-gray-400">Configure your mock interview session</p>
-            </div>
+    <PageWrapper>
+      <div className="max-w-3xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+          <h1 className="font-display text-4xl font-extrabold text-white">AI Interview</h1>
+          <p className="text-gray-400 mt-2">Configure your session and practice like it's real</p>
+        </motion.div>
 
-            {/* Mode selection */}
-            <div className="mb-8">
-              <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Interview Mode</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {MODES.map((m) => {
-                  const Icon = m.icon;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => setMode(m.id)}
-                      className={`p-5 rounded-2xl border-2 text-left transition-all ${
-                        mode === m.id
-                          ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20"
-                          : "border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700 bg-white dark:bg-gray-800"
-                      }`}
-                    >
-                      <div className={`inline-flex p-2 rounded-xl bg-gradient-to-br ${m.color} mb-3`}>
-                        <Icon className="w-5 h-5 text-white" />
-                      </div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{m.label}</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{m.desc}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Role */}
-            <div className="mb-6">
-              <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Target Role</h2>
-              <input
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                placeholder="e.g. Software Engineer, Data Scientist..."
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            {/* Difficulty + Duration */}
-            <div className="grid grid-cols-2 gap-6 mb-8">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Difficulty</h2>
-                <div className="flex gap-2">
-                  {DIFFICULTIES.map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDifficulty(d)}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all border-2 ${
-                        difficulty === d
-                          ? d === "Easy" ? "border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
-                            : d === "Medium" ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400"
-                            : "border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
-                          : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800"
-                      }`}
-                    >
-                      {d}
-                    </button>
-                  ))}
+        {/* Mode selection */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.1)] mb-5">
+          <h2 className="font-display font-semibold text-white mb-4">Interview Type</h2>
+          <div className="grid grid-cols-3 gap-3">
+            {MODES.map(m => (
+              <button
+                key={m.id} onClick={() => setMode(m.id)}
+                className={`p-4 rounded-xl border transition-all duration-200 text-left ${mode === m.id ? "border-brand-500/50 bg-brand-500/10" : "border-[rgba(155,93,229,0.1)] hover:border-[rgba(155,93,229,0.3)] hover:bg-white/5"}`}
+              >
+                <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${m.color} flex items-center justify-center mb-3`}>
+                  <m.icon className="w-5 h-5 text-white" />
                 </div>
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Duration</h2>
-                <div className="flex gap-2">
-                  {DURATION_OPTIONS.map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDuration(d)}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all border-2 ${
-                        duration === d
-                          ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400"
-                          : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800"
-                      }`}
-                    >
-                      {d}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onStart({ mode, difficulty, duration, role })}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold text-lg hover:from-purple-700 hover:to-cyan-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
-            >
-              <Brain className="w-6 h-6" />
-              Start Interview
-              <ChevronRight className="w-6 h-6" />
-            </button>
+                <p className="text-sm font-semibold text-white">{m.label}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+              </button>
+            ))}
           </div>
-        </main>
+        </motion.div>
+
+        {/* Difficulty + Duration */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="grid grid-cols-2 gap-4 mb-5">
+          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)]">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">Difficulty</h3>
+            <div className="flex gap-2">
+              {DIFFICULTIES.map(d => (
+                <button
+                  key={d} onClick={() => setDifficulty(d)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${difficulty === d ? "bg-brand-500/20 text-brand-300 border border-brand-500/40" : "text-gray-500 hover:text-white border border-transparent hover:border-[rgba(155,93,229,0.2)]"}`}
+                >{d}</button>
+              ))}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)]">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">Duration</h3>
+            <div className="flex gap-2">
+              {DURATION_OPTIONS.map(d => (
+                <button
+                  key={d} onClick={() => setDuration(d)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${duration === d ? "bg-brand-500/20 text-brand-300 border border-brand-500/40" : "text-gray-500 hover:text-white border border-transparent hover:border-[rgba(155,93,229,0.2)]"}`}
+                >{d}m</button>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Role input */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)] mb-6">
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Target Role</h3>
+          <input
+            value={role} onChange={e => setRole(e.target.value)}
+            placeholder="e.g. Software Engineer, Data Scientist..."
+            className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all"
+          />
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+          <Button variant="primary" size="xl" className="w-full shadow-brand-lg" onClick={() => onStart({ mode, difficulty, duration, role })}>
+            <Brain className="w-5 h-5" /> Start Interview Session
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+          <p className="text-center text-xs text-gray-600 mt-3">AI will adapt questions based on your answers — just like a real interviewer</p>
+        </motion.div>
       </div>
-    </div>
+    </PageWrapper>
   );
 };
 
-/* ─── Analysis Screen ───────────────────────────────────────────────── */
-const AnalysisScreen = ({ session, onNew }) => {
-  const navigate = useNavigate();
-  const scores = session.scores || [];
-  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-
-  const getColor = (s) => s >= 8 ? "text-green-500" : s >= 6 ? "text-yellow-500" : "text-red-500";
-  const getBg = (s) => s >= 8 ? "bg-green-500" : s >= 6 ? "bg-yellow-500" : "bg-red-500";
-
-  return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64">
-        <Header />
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-3xl mx-auto px-6 py-10">
-            <div className="text-center mb-10">
-              <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-purple-600 to-cyan-600 text-white text-4xl font-bold mb-4 shadow-xl">
-                {avg}
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Interview Complete!</h1>
-              <p className="text-gray-500 dark:text-gray-400">
-                {session.mode} • {session.difficulty} • {session.role}
-              </p>
-            </div>
-
-            {/* Score breakdown */}
-            {session.transcript?.length > 0 && (
-              <Card className="mb-6">
-                <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                  <Star className="w-5 h-5 text-yellow-500" /> Question Scores
-                </h2>
-                <div className="space-y-3">
-                  {session.transcript.filter(m => m.role === "assistant" && m.score).map((m, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500 dark:text-gray-400 w-6">{i + 1}</span>
-                      <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${getBg(m.score)}`}
-                          style={{ width: `${m.score * 10}%` }}
-                        />
-                      </div>
-                      <span className={`text-sm font-bold w-8 ${getColor(m.score)}`}>{m.score}/10</span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* AI Analysis */}
-            {session.analysis && (
-              <div className="space-y-4 mb-6">
-                {session.analysis.strengths?.length > 0 && (
-                  <Card>
-                    <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-500" /> Strengths
-                    </h2>
-                    <ul className="space-y-2">
-                      {session.analysis.strengths.map((s, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                          <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" /> {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </Card>
-                )}
-                {session.analysis.improvements?.length > 0 && (
-                  <Card>
-                    <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-orange-500" /> Areas to Improve
-                    </h2>
-                    <ul className="space-y-2">
-                      {session.analysis.improvements.map((s, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                          <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" /> {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </Card>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-4">
-              <Button variant="gradient" className="flex-1" onClick={onNew}>
-                <RotateCcw className="w-4 h-4 mr-2" /> New Interview
-              </Button>
-              <Button variant="secondary" className="flex-1" onClick={() => navigate("/dashboard")}>
-                Dashboard
-              </Button>
-            </div>
-          </div>
-        </main>
+/* ─── Chat Message ──────────────────────────────────────────────── */
+const Message = ({ role, content, score, feedback }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 12 }}
+    animate={{ opacity: 1, y: 0 }}
+    className={`flex gap-3 ${role === "user" ? "justify-end" : "justify-start"}`}
+  >
+    {role === "assistant" && (
+      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-neon-blue flex-shrink-0 flex items-center justify-center shadow-[0_0_10px_rgba(123,47,247,0.3)]">
+        <Brain className="w-4 h-4 text-white" />
       </div>
+    )}
+    <div className={`max-w-[80%] ${role === "user" ? "items-end" : "items-start"} flex flex-col gap-1`}>
+      <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+        role === "assistant"
+          ? "glass border border-[rgba(155,93,229,0.15)] text-gray-200 rounded-tl-sm"
+          : "bg-brand-500/20 border border-brand-500/30 text-white rounded-tr-sm"
+      }`}>
+        {content}
+      </div>
+      {score !== undefined && (
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs ${score >= 7 ? "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20" : score >= 5 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
+          <Star className="w-3 h-3" />
+          Score: {score}/10
+          {feedback && <span className="ml-1 text-gray-500">· {feedback}</span>}
+        </div>
+      )}
     </div>
-  );
-};
+    {role === "user" && (
+      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-neon-blue to-neon-cyan flex-shrink-0 flex items-center justify-center">
+        <span className="text-white text-xs font-bold">U</span>
+      </div>
+    )}
+  </motion.div>
+);
 
-/* ─── Main InterviewRoom ────────────────────────────────────────────── */
-export const InterviewRoom = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+/* ─── Interview Session ─────────────────────────────────────────── */
+const InterviewSession = ({ config, onEnd }) => {
+  const { userProfile } = useAuth();
+  const [messages,     setMessages]     = useState([]);
+  const [input,        setInput]        = useState("");
+  const [loading,      setLoading]      = useState(false);
+  const [timeLeft,     setTimeLeft]     = useState(config.duration * 60);
+  const [questionCount, setQuestionCount] = useState(0);
+  const [scores,       setScores]       = useState([]);
+  const [usedQuestions, setUsedQuestions] = useState(new Set());
+  const [pendingScore, setPendingScore] = useState(null);
+  const bottomRef = useRef(null);
+  const timerRef  = useRef(null);
 
-  const [phase, setPhase] = useState("setup"); // setup | interview | analysis
-  const [config, setConfig] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [userInput, setUserInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [interimText, setInterimText] = useState("");
-  const [timer, setTimer] = useState(0);
-  const [sessionData, setSessionData] = useState(null);
-  const [history, setHistory] = useState(getHistory);
-  const [showHistory, setShowHistory] = useState(false);
+  // Build dynamic system prompt
+  const systemPrompt = useMemo(() => `You are an expert ${config.mode} interviewer for a ${config.difficulty.toLowerCase()}-level ${config.role} position.
 
-  const messagesEndRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const timerRef = useRef(null);
-  const sessionRef = useRef({ transcript: [], scores: [] });
+CRITICAL RULES:
+1. NEVER repeat a question that has already been asked in this conversation
+2. Ask dynamic FOLLOW-UP questions based on what the candidate just said — probe deeper, challenge assumptions, ask for examples
+3. If their answer is vague, ask them to elaborate with specifics
+4. If their answer is strong, increase difficulty naturally
+5. Validate answer relevance — if they go off-topic, redirect politely
+6. Keep a natural conversational tone — don't be robotic
+7. After EACH answer, provide:
+   - A brief, honest score out of 10
+   - One specific improvement tip
+   - Then naturally transition to your next question
 
-  // Auto-scroll
+Format responses as:
+FEEDBACK: [1-2 sentence honest assessment]
+SCORE: [X/10]
+NEXT: [Your follow-up or next question]
+
+Difficulty: ${config.difficulty}
+Role: ${config.role}
+Type: ${config.mode}
+Questions asked so far: ${questionCount}`, [config, questionCount]);
+
+  // Get a random unused opening question
+  const getOpeningQuestion = useCallback(() => {
+    const bank = QUESTION_BANKS[config.mode] || QUESTION_BANKS.behavioral;
+    const available = bank.filter(q => !usedQuestions.has(q));
+    const pool = available.length > 0 ? available : bank;
+    const q = pool[Math.floor(Math.random() * pool.length)];
+    setUsedQuestions(prev => new Set([...prev, q]));
+    return q;
+  }, [config.mode, usedQuestions]);
+
+  // Start with opening question
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Timer
-  useEffect(() => {
-    if (phase === "interview") {
-      timerRef.current = setInterval(() => setTimer((t) => t + 1), 1000);
-    }
+    const opener = getOpeningQuestion();
+    setMessages([{ role: "assistant", content: `Hello! I'm your AI interviewer for this ${config.mode} session. Let's begin!\n\n${opener}` }]);
+    setQuestionCount(1);
+    // Start timer
+    timerRef.current = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) { clearInterval(timerRef.current); handleEnd(); return 0; }
+        return t - 1;
+      });
+    }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [phase]);
+  }, []); // eslint-disable-line
 
-  // Auto-end by duration
-  useEffect(() => {
-    if (config && timer >= config.duration * 60 && phase === "interview") {
-      handleEndInterview();
-    }
-  }, [timer, config, phase]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
 
-  /* ── Speech recognition ─────────────────────────────────────────── */
-  const setupSpeech = useCallback(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
+    try {
+      // Build conversation history for context
+      const history = messages.map(m => ({ role: m.role, content: m.content }));
+      history.push({ role: "user", content: userMsg });
 
-    rec.onresult = (e) => {
-      let interim = "", final = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        e.results[i].isFinal ? (final += t + " ") : (interim += t);
+      const aiText = await callAI(history, systemPrompt);
+
+      // Parse score from response
+      const scoreMatch  = aiText.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+      const feedbackMatch = aiText.match(/FEEDBACK:\s*(.+?)(?:\n|SCORE:)/is);
+      const nextMatch   = aiText.match(/NEXT:\s*(.+?)$/is);
+
+      const score    = scoreMatch    ? parseFloat(scoreMatch[1])    : null;
+      const feedback = feedbackMatch ? feedbackMatch[1].trim()      : null;
+      const nextQ    = nextMatch     ? nextMatch[1].trim()          : null;
+
+      // Clean display text — show full response naturally
+      const displayText = nextQ
+        ? `${feedback ? feedback + "\n\n" : ""}${nextQ}`
+        : aiText.replace(/FEEDBACK:.*?\n/is, "").replace(/SCORE:.*?\n/i, "").replace(/NEXT:/i, "").trim();
+
+      if (score !== null) {
+        setScores(prev => [...prev, score]);
+        setPendingScore({ score, feedback });
       }
-      setInterimText(interim);
-      if (final) { setUserInput((p) => p + final); setInterimText(""); }
-    };
-    rec.onerror = () => setIsRecording(false);
-    rec.onend = () => setIsRecording(false);
-    recognitionRef.current = rec;
-  }, []);
 
-  useEffect(() => { setupSpeech(); return () => recognitionRef.current?.abort(); }, [setupSpeech]);
-
-  const toggleRecording = () => {
-    if (!recognitionRef.current) { toast.error("Speech recognition not supported"); return; }
-    if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    } else {
-      setUserInput("");
-      recognitionRef.current.start();
-      setIsRecording(true);
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        { ...prev[prev.length - 1], score: score || undefined, feedback: feedback?.substring(0, 60) },
+        { role: "assistant", content: displayText },
+      ]);
+      setQuestionCount(q => q + 1);
+    } catch (err) {
+      toast.error("AI response failed. Check your connection.");
+      setMessages(prev => [...prev, { role: "assistant", content: "I'm having trouble connecting. Please try sending your response again." }]);
     }
+    setLoading(false);
   };
 
-  /* ── Start interview ────────────────────────────────────────────── */
-  const handleStart = useCallback(async (cfg) => {
-    setConfig(cfg);
-    setPhase("interview");
-    setTimer(0);
-    setMessages([]);
-    sessionRef.current = { transcript: [], scores: [], mode: cfg.mode, difficulty: cfg.difficulty, role: cfg.role };
-
-    setIsLoading(true);
-    try {
-      const pool = OPENING_QUESTIONS[cfg.mode] || OPENING_QUESTIONS.behavioral;
-      const q = pool[Math.floor(Math.random() * pool.length)];
-
-      let aiQ = q;
-      try {
-        const prompt = `You are an expert interviewer conducting a ${cfg.mode} interview for a ${cfg.role} role (${cfg.difficulty} difficulty). Start the interview with a welcoming message and ask: "${q}". Keep it to 3 sentences max.`;
-        aiQ = await callClaude([{ role: "user", content: "Start the interview." }], prompt);
-      } catch {}
-
-      const msg = { role: "assistant", content: aiQ, timestamp: new Date().toISOString() };
-      setMessages([msg]);
-      sessionRef.current.transcript.push(msg);
-    } catch (err) {
-      toast.error("Failed to start interview");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /* ── Send answer ────────────────────────────────────────────────── */
-  const handleSend = useCallback(async () => {
-    if (!userInput.trim() || isLoading) return;
-    const answer = userInput.trim();
-    setUserInput("");
-    setInterimText("");
-    if (isRecording) { recognitionRef.current?.stop(); setIsRecording(false); }
-
-    const userMsg = { role: "user", content: answer, timestamp: new Date().toISOString() };
-    setMessages((p) => [...p, userMsg]);
-    sessionRef.current.transcript.push(userMsg);
-
-    setIsLoading(true);
-    try {
-      const history = sessionRef.current.transcript.map((m) => ({
-        role: m.role, content: m.content,
-      }));
-
-      const systemPrompt = `You are an expert ${config.mode} interviewer for a ${config.role} role (${config.difficulty} difficulty). 
-After each user answer:
-1. Briefly acknowledge their answer (1 sentence)
-2. Give a score out of 10 and short feedback
-3. Ask the next relevant question
-
-Format your response as JSON:
-{"acknowledgment":"...","score":8,"feedback":"...","nextQuestion":"..."}`;
-
-      let raw = "";
-      try {
-        raw = await callClaude(history, systemPrompt);
-      } catch {}
-
-      const parsed = parseJSON(raw);
-      let content, score;
-
-      if (parsed) {
-        content = `${parsed.acknowledgment}\n\n📊 Score: ${parsed.score}/10 — ${parsed.feedback}\n\n${parsed.nextQuestion}`;
-        score = parsed.score;
-      } else {
-        // Fallback
-        const fallbacks = {
-          technical: "Good answer! Let me ask you about time complexity — what's the Big-O of binary search and why?",
-          behavioral: "Great example! Now tell me about a time you had to learn something new very quickly.",
-          hr: "That's helpful to know. What motivates you most in your work?",
-        };
-        content = raw || fallbacks[config.mode];
-      }
-
-      const aiMsg = { role: "assistant", content, score, timestamp: new Date().toISOString() };
-      setMessages((p) => [...p, aiMsg]);
-      sessionRef.current.transcript.push(aiMsg);
-      if (score) sessionRef.current.scores.push(score);
-    } catch {
-      toast.error("Failed to get response");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userInput, isLoading, isRecording, config]);
-
-  /* ── End interview ──────────────────────────────────────────────── */
-  const handleEndInterview = useCallback(async () => {
+  const handleEnd = useCallback(() => {
     clearInterval(timerRef.current);
-    setIsLoading(true);
+    const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const session = {
+      mode: config.mode, difficulty: config.difficulty, role: config.role,
+      duration: config.duration, scores, avgScore,
+      questionsAnswered: questionCount,
+      completedAt: new Date().toISOString(),
+      transcript: messages.map(m => `${m.role === "user" ? "You" : "AI"}: ${m.content}`).join("\n\n"),
+    };
+    saveHistory(session);
+    onEnd(session);
+  }, [scores, config, questionCount, messages, onEnd]);
 
-    try {
-      const transcript = sessionRef.current.transcript;
-      let analysis = null;
-
-      try {
-        const raw = await callClaude(
-          [{ role: "user", content: `Analyze this interview transcript and provide feedback. Transcript: ${JSON.stringify(transcript)}` }],
-          `You are an expert interviewer. Analyze the transcript and respond ONLY as JSON:
-{"strengths":["..."],"improvements":["..."],"overallFeedback":"..."}`
-        );
-        analysis = parseJSON(raw);
-      } catch {}
-
-      const session = {
-        ...sessionRef.current,
-        analysis,
-        duration: timer,
-        completedAt: new Date().toISOString(),
-      };
-      saveHistory(session);
-
-      // Persist to backend (best-effort, localStorage remains source of truth)
-      try {
-        const token = localStorage.getItem("prepai_token");
-        if (token) {
-          await fetch("/api/interview/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              mode:       session.mode,
-              difficulty: session.difficulty,
-              role:       session.role,
-              duration:   timer,
-              scores:     session.scores || [],
-              transcript: session.transcript,
-              analysis,
-            }),
-          });
-        }
-      } catch { /* silent */ }
-
-      setHistory(getHistory());
-      setSessionData(session);
-      setPhase("analysis");
-    } catch {
-      setPhase("analysis");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [timer]);
-
-  /* ── Render phases ──────────────────────────────────────────────── */
-  if (phase === "setup") {
-    return (
-      <SetupScreen
-        onStart={handleStart}
-        history={history}
-        showHistory={showHistory}
-        setShowHistory={setShowHistory}
-      />
-    );
-  }
-
-  if (phase === "analysis") {
-    return (
-      <AnalysisScreen
-        session={sessionData || sessionRef.current}
-        onNew={() => { setPhase("setup"); setMessages([]); setTimer(0); }}
-      />
-    );
-  }
-
-  /* ── Interview phase UI ─────────────────────────────────────────── */
-  const timeLeft = config ? config.duration * 60 - timer : 0;
-  const progress = config ? (timer / (config.duration * 60)) * 100 : 0;
+  const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+  const timerColor = timeLeft < 60 ? "text-red-400" : timeLeft < 180 ? "text-amber-400" : "text-neon-cyan";
+  const avgScore = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10 : 0;
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64 overflow-hidden">
-        <Header />
+    <div className="flex h-screen bg-surface">
+      {/* Minimal sidebar strip */}
+      <div className="w-16 flex-shrink-0 flex flex-col items-center py-4 gap-4 glass-strong border-r border-[rgba(155,93,229,0.1)]">
+        <img src="/logo.png" alt="PrepAI" className="w-9 h-9 rounded-xl" />
+        <div className="flex-1" />
+        <button onClick={handleEnd} className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all" title="End Interview">
+          <StopCircle className="w-5 h-5" />
+        </button>
+      </div>
 
-        {/* Interview header bar */}
-        <div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-semibold text-gray-900 dark:text-white capitalize">{config?.mode} Interview</span>
-            <Badge variant={config?.difficulty === "Easy" ? "success" : config?.difficulty === "Medium" ? "warning" : "danger"}>
-              {config?.difficulty}
-            </Badge>
-            <span className="text-sm text-gray-500 dark:text-gray-400">{config?.role}</span>
-          </div>
+      <div className="flex-1 flex flex-col">
+        {/* Top bar */}
+        <div className="glass-strong border-b border-[rgba(155,93,229,0.1)] px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-2 text-sm font-mono font-bold ${timeLeft < 60 ? "text-red-500" : "text-gray-700 dark:text-gray-300"}`}>
-              <Clock className="w-4 h-4" />
-              {formatTime(timeLeft > 0 ? timeLeft : 0)}
-            </div>
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={handleEndInterview}
-              disabled={isLoading}
-              className="flex items-center gap-1"
-            >
-              <StopCircle className="w-4 h-4" /> End
-            </Button>
+            <Badge variant={config.mode === "technical" ? "cyan" : config.mode === "behavioral" ? "primary" : "success"} className="capitalize">
+              {config.mode}
+            </Badge>
+            <Badge variant="default">{config.difficulty}</Badge>
+            <span className="text-xs text-gray-500">{config.role}</span>
           </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="h-1 bg-gray-200 dark:bg-gray-700">
-          <div
-            className="h-full bg-gradient-to-r from-purple-600 to-cyan-600 transition-all duration-1000"
-            style={{ width: `${Math.min(progress, 100)}%` }}
-          />
+          <div className="flex items-center gap-5">
+            {scores.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Star className="w-4 h-4 text-amber-400" />
+                <span className="text-sm font-semibold text-white">{avgScore}/10</span>
+              </div>
+            )}
+            <div className={`font-display text-lg font-bold tabular-nums ${timerColor}`}>
+              <Clock className="w-4 h-4 inline mr-1.5" />{fmt(timeLeft)}
+            </div>
+          </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <AnimatePresence>
-            {messages.map((msg, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-cyan-600 flex items-center justify-center mr-3 mt-1 flex-shrink-0">
-                    <Brain className="w-4 h-4 text-white" />
-                  </div>
-                )}
-                <div
-                  className={`max-w-lg rounded-2xl px-5 py-3 ${
-                    msg.role === "user"
-                      ? "bg-purple-600 text-white"
-                      : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 shadow-sm"
-                  }`}
-                >
-                  <p className="text-sm whitespace-pre-line">{msg.content}</p>
-                  <p className={`text-xs mt-1 ${msg.role === "user" ? "text-purple-200" : "text-gray-400"}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {isLoading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-cyan-600 flex items-center justify-center mr-3">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+          {messages.map((m, i) => (
+            <Message key={i} {...m} />
+          ))}
+          {loading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-neon-blue flex items-center justify-center">
                 <Brain className="w-4 h-4 text-white" />
               </div>
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-5 py-3">
-                <div className="flex gap-1">
-                  {[0, 1, 2].map((n) => (
-                    <div key={n} className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: `${n * 0.2}s` }} />
+              <div className="glass rounded-2xl px-4 py-3 border border-[rgba(155,93,229,0.15)]">
+                <div className="flex gap-1.5">
+                  {[0,1,2].map(i => (
+                    <motion.div key={i} className="w-2 h-2 rounded-full bg-neon-purple"
+                      animate={{ scale: [1,1.4,1] }} transition={{ delay: i*0.15, repeat: Infinity, duration: 0.9 }} />
                   ))}
                 </div>
               </div>
             </motion.div>
           )}
-          <div ref={messagesEndRef} />
+          <div ref={bottomRef} />
         </div>
 
-        {/* Input area */}
-        <div className="px-6 py-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          {interimText && (
-            <p className="text-sm text-purple-500 dark:text-purple-400 mb-2 italic">
-              🎤 {interimText}...
-            </p>
-          )}
-          <div className="flex items-end gap-3">
+        {/* Input */}
+        <div className="glass-strong border-t border-[rgba(155,93,229,0.1)] px-6 py-4">
+          <div className="flex gap-3 items-end">
             <textarea
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-              }}
-              placeholder="Type your answer (Enter to send, Shift+Enter for new line)..."
-              disabled={isLoading}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="Type your answer... (Enter to send, Shift+Enter for new line)"
               rows={3}
-              className="flex-1 px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-sm"
+              className="flex-1 px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 resize-none text-sm leading-relaxed transition-all"
             />
             <div className="flex flex-col gap-2">
-              <button
-                onClick={toggleRecording}
-                disabled={isLoading}
-                className={`p-3 rounded-xl transition-all ${
-                  isRecording
-                    ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-                    : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-                }`}
-                title={isRecording ? "Stop recording" : "Start voice input"}
-              >
-                {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </button>
-              <button
-                onClick={handleSend}
-                disabled={isLoading || !userInput.trim()}
-                className="p-3 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-600 text-white hover:from-purple-700 hover:to-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {isLoading ? <Spinner size="sm" /> : <Send className="w-5 h-5" />}
-              </button>
+              <Button variant="primary" size="md" onClick={handleSend} disabled={loading || !input.trim()}>
+                <Send className="w-4 h-4" />
+              </Button>
+              <Button variant="danger" size="md" onClick={handleEnd}>
+                <StopCircle className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-            {messages.filter(m => m.role === "user").length} responses · {formatTime(timer)} elapsed
-          </p>
+          <p className="text-xs text-gray-700 mt-2 text-center">AI adapts questions based on your answers · {questionCount} question{questionCount !== 1 ? "s" : ""} so far</p>
         </div>
       </div>
     </div>
   );
+};
+
+/* ─── Results ───────────────────────────────────────────────────── */
+const ResultsScreen = ({ session, onRestart }) => {
+  const navigate = useNavigate();
+  const avg = session.scores?.length
+    ? Math.round(session.scores.reduce((a,b)=>a+b,0)/session.scores.length*10)
+    : 0;
+
+  const grade = avg >= 85 ? { label: "Excellent!", color: "text-neon-cyan", bg: "from-neon-cyan/20 to-green-500/10" }
+    : avg >= 70 ? { label: "Good Job!", color: "text-brand-300", bg: "from-brand-500/20 to-neon-blue/10" }
+    : avg >= 55 ? { label: "Keep Practicing", color: "text-amber-400", bg: "from-amber-500/20 to-orange-500/10" }
+    : { label: "Needs Improvement", color: "text-red-400", bg: "from-red-500/20 to-rose-500/10" };
+
+  return (
+    <PageWrapper>
+      <div className="max-w-2xl mx-auto text-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="mb-8">
+          <motion.div animate={{ y: [0,-8,0] }} transition={{ duration:3, repeat:Infinity }}>
+            <img src="/logo.png" alt="PrepAI" className="w-20 h-20 mx-auto rounded-2xl shadow-brand mb-6" />
+          </motion.div>
+          <h2 className="font-display text-4xl font-extrabold text-white mb-2">Session Complete!</h2>
+          <p className="text-gray-400">Here's how you performed</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}
+          className={`glass rounded-3xl p-10 border border-[rgba(155,93,229,0.2)] bg-gradient-to-br ${grade.bg} mb-6`}
+        >
+          <p className={`font-display text-7xl font-extrabold ${grade.color} mb-2`}>{avg}%</p>
+          <p className={`text-xl font-semibold ${grade.color} mb-4`}>{grade.label}</p>
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            {[
+              { label: "Questions", value: session.questionsAnswered || session.scores?.length || 0 },
+              { label: "Duration",  value: `${session.duration}min` },
+              { label: "Mode",      value: session.mode },
+            ].map(s => (
+              <div key={s.label} className="glass rounded-xl py-3 px-2 border border-[rgba(155,93,229,0.1)]">
+                <p className="font-display text-xl font-bold text-white capitalize">{s.value}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
+          className="flex flex-col sm:flex-row gap-3"
+        >
+          <Button variant="primary" size="lg" className="flex-1 shadow-brand" onClick={onRestart}>
+            <RotateCcw className="w-5 h-5" /> New Session
+          </Button>
+          <Button variant="secondary" size="lg" className="flex-1" onClick={() => navigate("/analytics")}>
+            <TrendingUp className="w-5 h-5" /> View Analytics
+          </Button>
+          <Button variant="secondary" size="lg" className="flex-1" onClick={() => navigate("/dashboard")}>
+            Dashboard
+          </Button>
+        </motion.div>
+      </div>
+    </PageWrapper>
+  );
+};
+
+/* ─── Main component ────────────────────────────────────────────── */
+export const InterviewRoom = () => {
+  const [phase,   setPhase]   = useState("setup"); // setup | session | results
+  const [config,  setConfig]  = useState(null);
+  const [results, setResults] = useState(null);
+
+  const handleStart = (cfg) => { setConfig(cfg); setPhase("session"); };
+  const handleEnd   = (res) => { setResults(res); setPhase("results"); };
+  const handleRestart = () => { setConfig(null); setResults(null); setPhase("setup"); };
+
+  if (phase === "setup")   return <SetupScreen onStart={handleStart} />;
+  if (phase === "session") return <InterviewSession config={config} onEnd={handleEnd} />;
+  if (phase === "results") return <ResultsScreen session={results} onRestart={handleRestart} />;
+  return null;
 };

@@ -67,13 +67,13 @@ export const ForgotPassword = () => {
     if (result.success) startCooldown();
   };
 
-  const inputCls = "w-full pl-11 pr-4 py-3 rounded-xl bg-gray-700/60 border border-gray-600/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all";
+  const inputCls = "w-full pl-11 pr-4 py-3 rounded-xl bg-surface-elevated/60 border border-gray-600/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4 py-12 relative overflow-hidden">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/login" className="inline-flex items-center gap-2 text-gray-400 hover:text-purple-300 text-sm mb-6 transition-colors">
+          <Link to="/login" className="inline-flex items-center gap-2 text-gray-400 hover:text-neon-purple text-sm mb-6 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back to Sign In
           </Link>
           <h1 className="text-3xl font-bold text-white mb-1">Reset Password</h1>
@@ -85,7 +85,7 @@ export const ForgotPassword = () => {
           </p>
         </div>
 
-        <div className="bg-gray-800/60 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl p-8">
+        <div className="glass-strong rounded-3xl border border-[rgba(155,93,229,0.2)] shadow-[0_20px_60px_rgba(0,0,0,0.5)] p-8">
           {/* Step indicators */}
           <div className="flex items-center justify-center gap-2 mb-8">
             {[STEPS.EMAIL, STEPS.OTP, STEPS.PASSWORD].map((s, i) => (
@@ -93,12 +93,12 @@ export const ForgotPassword = () => {
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                   step === STEPS.DONE || [STEPS.EMAIL,STEPS.OTP,STEPS.PASSWORD].indexOf(step) > i
                     ? "bg-green-500 text-white"
-                    : step === s ? "bg-purple-600 text-white" : "bg-gray-700 text-gray-500"
+                    : step === s ? "bg-brand-500 text-white" : "bg-surface-elevated text-gray-500"
                 }`}>
                   {step === STEPS.DONE || [STEPS.EMAIL,STEPS.OTP,STEPS.PASSWORD].indexOf(step) > i
                     ? <CheckCircle className="w-4 h-4" /> : i + 1}
                 </div>
-                {i < 2 && <div className={`flex-1 h-0.5 max-w-8 rounded ${[STEPS.EMAIL,STEPS.OTP,STEPS.PASSWORD].indexOf(step) > i || step === STEPS.DONE ? "bg-green-500" : "bg-gray-700"}`} />}
+                {i < 2 && <div className={`flex-1 h-0.5 max-w-8 rounded ${[STEPS.EMAIL,STEPS.OTP,STEPS.PASSWORD].indexOf(step) > i || step === STEPS.DONE ? "bg-green-500" : "bg-surface-elevated"}`} />}
               </React.Fragment>
             ))}
           </div>
@@ -119,7 +119,7 @@ export const ForgotPassword = () => {
                   <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" className={inputCls} autoFocus />
                 </div>
               </div>
-              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2">
+              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-neon-blue text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Sending OTP…</> : "Send Reset OTP"}
               </button>
             </form>
@@ -134,10 +134,10 @@ export const ForgotPassword = () => {
                   <input type="text" inputMode="numeric" maxLength={6} value={otp} onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "")); setError(""); }} placeholder="123456" className={`${inputCls} text-center text-xl tracking-widest font-mono`} autoFocus />
                 </div>
               </div>
-              <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-semibold flex items-center justify-center gap-2">
+              <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-neon-blue text-white font-semibold flex items-center justify-center gap-2">
                 Verify OTP
               </button>
-              <button type="button" onClick={handleResend} disabled={cooldown > 0} className="w-full text-sm text-purple-400 hover:text-purple-300 disabled:text-gray-600 flex items-center justify-center gap-1">
+              <button type="button" onClick={handleResend} disabled={cooldown > 0} className="w-full text-sm text-neon-purple hover:text-neon-purple disabled:text-gray-600 flex items-center justify-center gap-1">
                 <RefreshCw className="w-3 h-3" />{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend OTP"}
               </button>
             </form>
@@ -165,7 +165,7 @@ export const ForgotPassword = () => {
                   ))}
                 </div>
               )}
-              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2">
+              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-neon-blue text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Resetting…</> : "Reset Password"}
               </button>
             </form>
@@ -176,7 +176,7 @@ export const ForgotPassword = () => {
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
               <p className="text-white font-semibold text-lg mb-2">Password Reset!</p>
               <p className="text-gray-400 text-sm mb-6">You can now sign in with your new password.</p>
-              <button onClick={() => navigate("/login")} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-semibold">
+              <button onClick={() => navigate("/login")} className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-neon-blue text-white font-semibold">
                 Go to Sign In
               </button>
             </div>

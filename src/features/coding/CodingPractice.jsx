@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import Editor from "@monaco-editor/react";
-import { Header } from "../../components/layout/Header";
-import { Sidebar } from "../../components/layout/Sidebar";
-import { Card, Badge, Button, Spinner } from "../../components/ui";
+import { Badge, Button, Spinner } from "../../components/ui";
+import { PageWrapper } from "../../components/PageWrapper";
 import {
   CheckCircle, Play, ExternalLink, RotateCcw, Search,
   BookOpen, X, ChevronRight, ArrowLeft, List, Code2,
@@ -243,10 +242,7 @@ export const CodingPractice = () => {
 
   // TOPICS VIEW
   if (view === "topics") return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64 overflow-hidden">
-        <Header />
+    <PageWrapper>
         <main className="flex-1 overflow-auto">
           <div className="max-w-6xl mx-auto px-6 py-8">
             {/* Title + global stats */}
@@ -296,22 +292,15 @@ export const CodingPractice = () => {
               ))}
             </div>
           </div>
-        </main>
-      </div>
-    </div>
+    </PageWrapper>
   );
 
   // PROBLEMS VIEW
   if (view === "problems") {
     const meta = TOPIC_META[selTopic] || DEFAULT_META;
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-        <Sidebar />
-        <div className="flex-1 flex flex-col ml-20 md:ml-64 overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-auto">
-            <div className="max-w-4xl mx-auto px-6 py-8">
-              {/* Back + title */}
+      <PageWrapper>
+                  {/* Back + title */}
               <div className="flex items-center gap-4 mb-6">
                 <button onClick={() => setView("topics")} className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
                   <ArrowLeft className="w-4 h-4" /> All Topics
@@ -365,7 +354,7 @@ export const CodingPractice = () => {
               </div>
 
               {/* Problems list */}
-              <Card className="p-0 overflow-hidden">
+              <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] "p-0 overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
                   <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{topicProblems.length} problems</span>
                   <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -427,7 +416,7 @@ export const CodingPractice = () => {
                     ))}
                   </div>
                 )}
-              </Card>
+              </div>
             </div>
           </main>
         </div>
@@ -437,10 +426,7 @@ export const CodingPractice = () => {
 
   // EDITOR VIEW
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64 overflow-hidden">
-        <Header />
+    <PageWrapper>
         {/* Editor toolbar */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-wrap gap-2">
           <div className="flex items-center gap-3">
@@ -520,7 +506,6 @@ export const CodingPractice = () => {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </PageWrapper>
   );
 };

@@ -98,19 +98,17 @@ export const VerifyEmail = () => {
   }, [otp]); // otp is the only trigger; verifyEmail/navigate/email are stable refs
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4 py-12 relative overflow-hidden">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-cyan-600 mb-4 shadow-xl">
-            <Mail className="w-8 h-8 text-white" />
-          </div>
+          <img src="/logo.png" alt="PrepAI" className="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-brand object-contain" />
           <h1 className="text-3xl font-bold text-white mb-2">Verify Your Email</h1>
           <p className="text-gray-400 text-sm">
-            We sent a 6-digit OTP to <span className="text-purple-300 font-medium">{email}</span>
+            We sent a 6-digit OTP to <span className="text-neon-purple font-medium">{email}</span>
           </p>
         </div>
 
-        <div className="bg-gray-800/60 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl p-8">
+        <div className="glass-strong rounded-3xl border border-[rgba(155,93,229,0.2)] shadow-[0_20px_60px_rgba(0,0,0,0.5)] p-8">
           {/* OTP boxes */}
           <div className="flex justify-center gap-3 mb-6" onPaste={handlePaste}>
             {otp.map((digit, i) => (
@@ -121,8 +119,8 @@ export const VerifyEmail = () => {
                 value={digit}
                 onChange={(e) => handleChange(i, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(i, e)}
-                className={`w-12 h-14 text-center text-xl font-bold rounded-xl border-2 bg-gray-700/60 text-white focus:outline-none transition-all ${
-                  digit ? "border-purple-500 bg-purple-500/10" : "border-gray-600/50"
+                className={`w-12 h-14 text-center text-xl font-bold rounded-xl border-2 bg-surface-elevated/60 text-white focus:outline-none transition-all ${
+                  digit ? "border-neon-purple bg-purple-500/10" : "border-gray-600/50"
                 } ${error ? "border-red-500/60" : ""}`}
               />
             ))}
@@ -136,7 +134,7 @@ export const VerifyEmail = () => {
 
           <button
             onClick={handleSubmit} disabled={loading || otp.some((d) => !d)}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700 text-white font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2 mb-4"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-neon-blue hover:from-purple-700 hover:to-cyan-700 text-white font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2 mb-4"
           >
             {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Verifying…</> : <><CheckCircle className="w-4 h-4" />Verify Email</>}
           </button>
@@ -144,7 +142,7 @@ export const VerifyEmail = () => {
           <div className="text-center">
             <button
               onClick={handleResend} disabled={resending || cooldown > 0}
-              className="text-sm text-purple-400 hover:text-purple-300 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex items-center gap-1 mx-auto"
+              className="text-sm text-neon-purple hover:text-neon-purple disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex items-center gap-1 mx-auto"
             >
               {resending ? <><Loader2 className="w-3 h-3 animate-spin" />Sending…</> :
                cooldown > 0 ? `Resend OTP in ${cooldown}s` :
@@ -155,7 +153,7 @@ export const VerifyEmail = () => {
 
         <p className="text-center text-gray-600 text-sm mt-5">
           Wrong email?{" "}
-          <Link to="/register" className="text-purple-400 hover:text-purple-300">Register again</Link>
+          <Link to="/register" className="text-neon-purple hover:text-neon-purple">Register again</Link>
         </p>
       </div>
     </div>

@@ -23,6 +23,12 @@ const userSchema = new mongoose.Schema(
     streak:            { type: Number, default: 0 },
     xp:                { type: Number, default: 0 },
     lastActive:        { type: Date,   default: Date.now },
+    // Premium / subscription
+    isPremium:           { type: Boolean, default: false },
+    premiumPlan:         { type: String,  default: "" },
+    premiumExpiry:       { type: Date },
+    premiumPaymentId:    { type: String,  default: "" },
+    premiumActivatedAt:  { type: Date },
   },
   { timestamps: true }
 );

@@ -1,7 +1,9 @@
+import { PageWrapper } from "../../components/PageWrapper";
+import { Badge } from "../../components/ui";
 import React, { useState, useRef } from "react";
-import { Header } from "../../components/layout/Header";
-import { Sidebar } from "../../components/layout/Sidebar";
-import { Card, Badge } from "../../components/ui";
+
+
+
 import api from "../../services/apiClient";
 import {
   Upload, CheckCircle, AlertTriangle, TrendingUp, Zap,
@@ -197,15 +199,10 @@ export const ResumeAnalyzer = () => {
   ] : [];
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
-      <div className="flex-1 flex flex-col ml-20 md:ml-64">
-        <Header />
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-5xl mx-auto px-6 py-8">
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-1">Resume Analyzer</h1>
-              <p className="text-gray-500 dark:text-gray-400">AI-powered ATS scoring, skills gap analysis, and improvement suggestions</p>
+    <PageWrapper>
+          <div className="mb-8">
+              <h1 className="font-display text-3xl font-extrabold text-white mb-1">Resume Analyzer</h1>
+              <p className="text-gray-400 text-sm">AI-powered ATS scoring, skills gap analysis, and improvement suggestions</p>
             </div>
 
             {/* Validation error */}
@@ -221,7 +218,7 @@ export const ResumeAnalyzer = () => {
             )}
 
             {!analysis && !loading && !valError ? (
-              <Card className={`border-2 border-dashed cursor-pointer transition-all ${dragActive ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20 scale-[1.01]" : "border-gray-300 dark:border-gray-600 hover:border-purple-400"}`}
+              <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className={`border-2 border-dashed cursor-pointer transition-all ${dragActive ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20 scale-[1.01]" : "border-gray-300 dark:border-gray-600 hover:border-purple-400"}`}
                 onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onClick={() => fileRef.current?.click()}>
                 <div className="py-16 text-center">
                   <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-100 to-cyan-100 dark:from-purple-900/40 dark:to-cyan-900/40 mb-5">
@@ -232,9 +229,9 @@ export const ResumeAnalyzer = () => {
                   <p className="text-xs text-gray-400 dark:text-gray-500">PDF · DOC · DOCX · Max 5MB · AI validates before analyzing</p>
                   <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" onChange={(e) => processFile(e.target.files?.[0])} className="hidden" />
                 </div>
-              </Card>
+              </div>
             ) : loading ? (
-              <Card className="py-16 text-center">
+              <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="py-16 text-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative w-16 h-16">
                     <div className="absolute inset-0 rounded-full border-4 border-gray-200 dark:border-gray-700" />
@@ -245,11 +242,11 @@ export const ResumeAnalyzer = () => {
                     <p className="text-sm text-gray-500 mt-1">Extracting skills · Scoring ATS compatibility · Generating suggestions</p>
                   </div>
                 </div>
-              </Card>
+              </div>
             ) : analysis ? (
               <div className="space-y-6">
                 {/* Hero: ATS score + preview controls */}
-                <Card className="bg-gradient-to-br from-gray-900 to-gray-800 text-white border-0 shadow-xl">
+                <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="bg-gradient-to-br from-gray-900 to-gray-800 text-white border-0 shadow-xl">
                   <div className="flex flex-col md:flex-row items-center gap-8">
                     <ATSRing score={analysis.atsScore} />
                     <div className="flex-1">
@@ -277,16 +274,16 @@ export const ResumeAnalyzer = () => {
                       </button>
                     </div>
                   </div>
-                </Card>
+                </div>
 
                 {showPreview && previewUrl && (
-                  <Card className="p-0 overflow-hidden">
+                  <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] className="p-0 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                       <span className="font-medium text-gray-900 dark:text-white text-sm">Resume Preview</span>
                       <button onClick={() => setShowPreview(false)}><X className="w-5 h-5 text-gray-500" /></button>
                     </div>
                     <iframe src={previewUrl} className="w-full h-96" title="Resume Preview" />
-                  </Card>
+                  </div>
                 )}
 
                 {/* Section scores + radar */}
@@ -299,7 +296,7 @@ export const ResumeAnalyzer = () => {
                       <div className="space-y-4">
                         {SECTION_BARS.map((s) => <ScoreBar key={s.label} {...s} />)}
                       </div>
-                    </Card>
+                    </div>
                     <Card>
                       <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Skill Radar</h2>
                       <ResponsiveContainer width="100%" height={200}>
@@ -310,7 +307,7 @@ export const ResumeAnalyzer = () => {
                           <Radar dataKey="score" stroke="#9333ea" fill="#9333ea" fillOpacity={0.3} />
                         </RadarChart>
                       </ResponsiveContainer>
-                    </Card>
+                    </div>
                   </div>
                 )}
 
@@ -328,7 +325,7 @@ export const ResumeAnalyzer = () => {
                         </div>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                   <Card>
                     <h2 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-orange-500" /> Improvements
@@ -341,7 +338,7 @@ export const ResumeAnalyzer = () => {
                         </div>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                 </div>
 
                 {/* Skills found */}
@@ -353,7 +350,7 @@ export const ResumeAnalyzer = () => {
                     <div className="flex flex-wrap gap-2">
                       {analysis.skills.map((s,i) => <Badge key={i} variant="primary">{s}</Badge>)}
                     </div>
-                  </Card>
+                  </div>
                 )}
 
                 {/* Missing keywords */}
@@ -366,7 +363,7 @@ export const ResumeAnalyzer = () => {
                     <div className="flex flex-wrap gap-2">
                       {analysis.missingKeywords.map((k,i) => <Badge key={i} variant="warning">{k}</Badge>)}
                     </div>
-                  </Card>
+                  </div>
                 )}
 
                 {/* Trending skills + recommended tech */}
@@ -379,7 +376,7 @@ export const ResumeAnalyzer = () => {
                       <div className="flex flex-wrap gap-2">
                         {analysis.trendingSkills.map((s,i) => <Badge key={i} variant="default">{s}</Badge>)}
                       </div>
-                    </Card>
+                    </div>
                   )}
                   {analysis.recommendedTech?.length > 0 && (
                     <Card>
@@ -389,7 +386,7 @@ export const ResumeAnalyzer = () => {
                       <div className="flex flex-wrap gap-2">
                         {analysis.recommendedTech.map((s,i) => <Badge key={i} variant="primary">{s}</Badge>)}
                       </div>
-                    </Card>
+                    </div>
                   )}
                 </div>
 
@@ -407,7 +404,7 @@ export const ResumeAnalyzer = () => {
                         </div>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                 )}
 
                 {/* Actions */}
@@ -421,9 +418,6 @@ export const ResumeAnalyzer = () => {
                 </div>
               </div>
             ) : null}
-          </div>
-        </main>
-      </div>
-    </div>
+    </PageWrapper>
   );
 };
