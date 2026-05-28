@@ -416,7 +416,6 @@ export const CodingPractice = () => {
                   </div>
                 )}
               </div>
-            </div>
       </PageWrapper>
     );
   }
