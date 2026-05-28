@@ -31,8 +31,8 @@ export const Analytics = () => {
   const [apiStats, setApiStats] = useState(null);
   const [loading, setLoading]   = useState(true);
 
-  const history = useMemo(() => { try { return JSON.parse(localStorage.getItem(INTERVIEW_KEY) || "[]"); } catch { return []; } }, []);
-  const solved  = useMemo(() => { try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]").length; } catch { return 0; } }, []);
+  const history = useMemo(() => { try { return JSON.parse(localStorage.getItem(INTERVIEW_KEY) || "[]"); } catch (e) { return []; } }, []);
+  const solved  = useMemo(() => { try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]").length; } catch (e) { return 0; } }, []);
 
   useEffect(() => {
     api.get("/api/analytics").then(({ data }) => { if (data?.data) setApiStats(data.data); }).catch(() => {}).finally(() => setLoading(false));

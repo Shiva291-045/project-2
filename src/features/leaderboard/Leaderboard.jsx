@@ -52,7 +52,7 @@ export const Leaderboard = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const history = (() => { try { return JSON.parse(localStorage.getItem("prepai_interview_history") || "[]"); } catch { return []; } })();
+  const history = (() => { try { return JSON.parse(localStorage.getItem("prepai_interview_history") || "[]"); } catch (e) { return []; } })();
   const myScore = history.length ? Math.round(history.flatMap(s=>s.scores||[]).reduce((a,b,_,arr)=>a+b/arr.length,0)*10) : 0;
 
   const top3 = entries.slice(0,3);

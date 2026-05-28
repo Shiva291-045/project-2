@@ -201,7 +201,7 @@ export const Pricing = () => {
             });
             toast.success("🎉 Welcome to PrepAI Premium! Enjoy unlimited access.");
             setTimeout(() => navigate("/dashboard"), 1500);
-          } catch {
+          } catch (e) {
             toast.error("Payment verification failed. Please contact support with your payment ID.");
           }
           setLoading(false);

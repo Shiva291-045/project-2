@@ -39,7 +39,7 @@ export const Profile = () => {
       toast.success("Profile saved!");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch {
+    } catch (e) {
       toast.error("Failed to save profile.");
     }
     setSaving(false);

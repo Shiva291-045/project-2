@@ -111,7 +111,7 @@ export const ResumeAnalyzer = () => {
             const content = await page.getTextContent();
             extractedText += content.items.map((s) => s.str).join(" ") + "\n";
           }
-        } catch { extractedText = file.name; }
+        } catch (e) { extractedText = file.name; }
       }
 
       /* ── Client-side resume check (lenient gate) ── */

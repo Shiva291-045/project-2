@@ -23,7 +23,7 @@ const ALL_PROBLEMS = (() => {
         url:        p["URL"] || "",
         difficulty: assignDifficulty(i, (p["Topic:"] || "").trim()),
       }));
-  } catch { return []; }
+  } catch (e) { return []; }
 })();
 
 function assignDifficulty(idx, topic) {
@@ -66,7 +66,7 @@ const STARTER = {
 };
 
 const SOLVED_KEY = "prepai_solved_problems";
-const getSolved  = () => { try { return new Set(JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]")); } catch { return new Set(); } };
+const getSolved  = () => { try { return new Set(JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]")); } catch (e) { return new Set(); } };
 const saveSolved = (s) => localStorage.setItem(SOLVED_KEY, JSON.stringify([...s]));
 
 // ── Topic grid card ───────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ export const CodingPractice = () => {
           await api.post("/api/coding/solved", { problemId: id, title: prob.title, topic: prob.topic, difficulty: prob.difficulty });
         }
       }
-    } catch { /* silent — localStorage already updated */ }
+    } catch (e) { /* silent — localStorage already updated */ }
   }, []);
 
   const openEditor = (prob) => {
@@ -220,7 +220,7 @@ export const CodingPractice = () => {
       setOutput(dec(r.stdout) || dec(r.stderr) || dec(r.compile_output) || r.status?.description || "No output");
       if (dec(r.stderr) || dec(r.compile_output)) toast.error("Errors in output");
       else toast.success("Executed!");
-    } catch {
+    } catch (e) {
       if (language === "javascript") {
         try {
           const logs = [];

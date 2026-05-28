@@ -73,7 +73,7 @@ const saveHistory = (session) => {
     const h = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     h.unshift({ ...session, savedAt: new Date().toISOString() });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(0, 20)));
-  } catch {}
+  } catch (e) {}
 };
 
 /* ─── Setup Screen ──────────────────────────────────────────────── */

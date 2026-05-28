@@ -8,7 +8,7 @@ const TOKEN_KEY = "prepai_token";
 const USER_KEY  = "prepai_user";
 
 const loadCached = () => {
-  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch (e) { return null; }
 };
 
 export const AuthProvider = ({ children }) => {

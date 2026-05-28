@@ -14,8 +14,8 @@ import {
 
 const INTERVIEW_HISTORY_KEY = "prepai_interview_history";
 const SOLVED_KEY            = "prepai_solved_problems";
-const getInterviewHistory   = () => { try { return JSON.parse(localStorage.getItem(INTERVIEW_HISTORY_KEY) || "[]"); } catch { return []; } };
-const getSolvedCount        = () => { try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]").length; } catch { return 0; } };
+const getInterviewHistory   = () => { try { return JSON.parse(localStorage.getItem(INTERVIEW_HISTORY_KEY) || "[]"); } catch (e) { return []; } };
+const getSolvedCount        = () => { try { return JSON.parse(localStorage.getItem(SOLVED_KEY) || "[]").length; } catch (e) { return 0; } };
 
 const QUICK_ACTIONS = [
   { label: "AI Interview",     icon: Brain,     href: "/interview",   gradient: "from-brand-500 to-neon-blue", glow: "rgba(123,47,247,0.4)", desc: "Start mock session" },
