@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, LogOut, User, ChevronDown, Crown, Bell, Settings, Sparkles } from "lucide-react";
+import { Menu, X, LogOut, User, ChevronDown, Crown, Settings, Sun, Moon } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { useTheme } from "../../ThemeContext";
 import clsx from "clsx";
 
 export const Header = () => {
   const [mobileOpen,  setMobileOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const { user, userProfile, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate  = useNavigate();
   const location  = useLocation();
   const dropRef   = useRef(null);
@@ -43,7 +45,6 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-50 glass-strong border-b border-[rgba(155,93,229,0.15)]">
-      {/* Thin neon line at top */}
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-neon-purple/60 to-transparent" />
 
       <div className="max-w-full px-4 sm:px-6 lg:px-8">
@@ -52,16 +53,10 @@ export const Header = () => {
           {/* Logo */}
           <Link to="/dashboard" className="flex items-center gap-3 flex-shrink-0 group">
             <div className="relative w-9 h-9">
-              <img
-                src="/logo.png"
-                alt="PrepAI"
-                className="w-9 h-9 rounded-xl object-contain group-hover:scale-110 transition-transform duration-300"
-              />
+              <img src="/logo.png" alt="PrepAI" className="w-9 h-9 rounded-xl object-contain group-hover:scale-110 transition-transform duration-300" />
               <div className="absolute inset-0 rounded-xl bg-neon-purple/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-md" />
             </div>
-            <span className="hidden sm:inline font-display text-xl font-bold gradient-text">
-              PrepAI
-            </span>
+            <span className="hidden sm:inline font-display text-xl font-bold gradient-text">PrepAI</span>
           </Link>
 
           {/* Desktop nav */}
@@ -72,9 +67,7 @@ export const Header = () => {
                 to={link.href}
                 className={clsx(
                   "relative px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                  isActive(link.href)
-                    ? "text-white"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                  isActive(link.href) ? "text-white" : "text-gray-400 hover:text-white hover:bg-white/5"
                 )}
               >
                 {isActive(link.href) && (
@@ -90,21 +83,27 @@ export const Header = () => {
           </nav>
 
           {/* Right side */}
-          <div className="flex items-center gap-3">
-            {/* Pricing CTA if not premium */}
+          <div className="flex items-center gap-2">
+            {/* Light/Dark toggle */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all duration-200"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             {user && !isPremium && (
               <Link
                 to="/pricing"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/30 text-amber-300 hover:from-amber-500/30 hover:to-yellow-500/30 transition-all duration-200"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/30 text-amber-300 hover:from-amber-500/30 transition-all duration-200"
               >
-                <Crown className="w-3.5 h-3.5" />
-                Upgrade
+                <Crown className="w-3.5 h-3.5" /> Upgrade
               </Link>
             )}
             {isPremium && (
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/30 text-amber-300">
-                <Crown className="w-3.5 h-3.5" />
-                Premium
+                <Crown className="w-3.5 h-3.5" /> Premium
               </div>
             )}
 
@@ -113,7 +112,7 @@ export const Header = () => {
               <div className="relative" ref={dropRef}>
                 <button
                   onClick={() => setProfileOpen(!profileOpen)}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/5 transition-all duration-200 group"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/5 transition-all duration-200"
                 >
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-neon-blue flex items-center justify-center text-white text-sm font-bold shadow-[0_0_10px_rgba(123,47,247,0.3)]">
                     {initials}
@@ -130,18 +129,17 @@ export const Header = () => {
                       transition={{ duration: 0.15 }}
                       className="absolute right-0 mt-2 w-56 glass-strong rounded-2xl border border-[rgba(155,93,229,0.2)] shadow-[0_20px_60px_rgba(0,0,0,0.5)] overflow-hidden"
                     >
-                      {/* User info */}
                       <div className="px-4 py-3.5 border-b border-[rgba(155,93,229,0.15)]">
                         <p className="text-sm font-semibold text-white truncate">{displayName}</p>
                         <p className="text-xs text-gray-500 truncate mt-0.5">{email}</p>
+                        {isPremium && <span className="inline-flex items-center gap-1 mt-1 text-xs text-amber-300"><Crown className="w-3 h-3" /> Premium</span>}
                       </div>
 
-                      {/* Links */}
                       <div className="p-1.5">
                         {[
                           { icon: User, label: "Profile", href: "/profile" },
                           { icon: Settings, label: "Settings", href: "/profile" },
-                          { icon: Crown, label: isPremium ? "Premium Active" : "Upgrade to Premium", href: "/pricing" },
+                          { icon: Crown, label: isPremium ? "Premium Active ✓" : "Upgrade to Premium", href: "/pricing" },
                         ].map(item => (
                           <Link
                             key={item.label}
@@ -160,8 +158,7 @@ export const Header = () => {
                           onClick={handleLogout}
                           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all duration-150"
                         >
-                          <LogOut className="w-4 h-4" />
-                          Sign out
+                          <LogOut className="w-4 h-4" /> Sign out
                         </button>
                       </div>
                     </motion.div>
@@ -170,7 +167,6 @@ export const Header = () => {
               </div>
             )}
 
-            {/* Mobile menu toggle */}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all"

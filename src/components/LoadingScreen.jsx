@@ -38,7 +38,7 @@ export const LoadingScreen = ({ message = "Loading..." }) => (
 
       <div className="text-center">
         <p className="font-display text-lg font-semibold gradient-text">{message}</p>
-        <p className="text-xs text-gray-600 mt-1">Practice. Prepare. Perform.</p>
+        <p className="text-xs text-gray-600 mt-1">Developed by Shiva · PrepAI</p>
       </div>
     </motion.div>
   </div>

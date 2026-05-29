@@ -96,7 +96,7 @@ export const Landing = () => {
           <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0}>
             <Badge variant="primary" className="mb-6 inline-flex gap-2 px-4 py-2 text-sm">
               <Sparkles className="w-4 h-4 text-neon-purple animate-pulse-neon" />
-              Powered by Claude AI — The Most Advanced Interview Prep
+              Developed by Shiva
             </Badge>
           </motion.div>
 
@@ -292,7 +292,7 @@ export const Landing = () => {
               <img src="/logo.png" alt="PrepAI" className="w-7 h-7 rounded-lg" />
               <span className="font-display font-bold gradient-text">PrepAI</span>
             </div>
-            <p className="text-xs text-gray-600">© 2025 PrepAI. Practice. Prepare. Perform.</p>
+            <p className="text-xs text-gray-600">© 2025 PrepAI · Developed by Shiva · Practice. Prepare. Perform.</p>
             <div className="flex gap-4 text-xs text-gray-600">
               <a href="#" className="hover:text-gray-400 transition-colors">Privacy</a>
               <a href="#" className="hover:text-gray-400 transition-colors">Terms</a>

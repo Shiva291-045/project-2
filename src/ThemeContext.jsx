@@ -1,30 +1,25 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
-const ThemeContext = createContext(null);
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error("useTheme must be used within a ThemeProvider");
-  }
-  return context;
-};
+const ThemeContext = createContext({ theme: "dark", toggleTheme: () => {} });
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("prepai_theme") || "dark"; } catch { return "dark"; }
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem("ip_theme") || "dark";
-    setTheme(saved);
-    document.documentElement.classList.toggle("dark", saved === "dark");
-  }, []);
+    const root = document.documentElement;
+    if (theme === "light") {
+      root.classList.add("light");
+      root.classList.remove("dark");
+    } else {
+      root.classList.add("dark");
+      root.classList.remove("light");
+    }
+    try { localStorage.setItem("prepai_theme", theme); } catch {}
+  }, [theme]);
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    localStorage.setItem("ip_theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  };
+  const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
@@ -32,3 +27,6 @@ export const ThemeProvider = ({ children }) => {
     </ThemeContext.Provider>
   );
 };
+
+export const useTheme = () => useContext(ThemeContext);
+export default ThemeContext;

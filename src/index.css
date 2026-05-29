@@ -156,3 +156,43 @@ button, a { transition: all 0.25s ease; }
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Light Mode ────────────────────────────────────────────────── */
+.light {
+  --neon-purple: #7b2ff7;
+  --neon-blue:   #2563eb;
+  --neon-cyan:   #0891b2;
+  --neon-pink:   #db2777;
+  --brand:       #7b2ff7;
+  --surface:     #f8f7ff;
+  --card:        #ffffff;
+  --elevated:    #f1f0ff;
+  --border:      rgba(123,47,247,0.15);
+}
+
+.light body {
+  background: #f8f7ff;
+  color: #1a1a2e;
+}
+
+.light .glass {
+  background: rgba(255,255,255,0.7);
+  border-color: rgba(123,47,247,0.12);
+}
+
+.light .glass-strong {
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(123,47,247,0.18);
+}
+
+.light .bg-surface { background: #f8f7ff !important; }
+.light .bg-surface-elevated { background: #f1f0ff !important; }
+.light .text-gray-400 { color: #6b7280 !important; }
+.light .text-gray-500 { color: #9ca3af !important; }
+.light .text-gray-600 { color: #d1d5db !important; }
+.light .text-gray-700 { color: #e5e7eb !important; }
+.light .text-white { color: #1a1a2e !important; }
+.light .text-gray-200 { color: #374151 !important; }
+.light .text-gray-300 { color: #4b5563 !important; }
+.light .border-\[rgba\(155\,93\,229\,0\.1\)\] { border-color: rgba(123,47,247,0.12) !important; }
+.light .border-\[rgba\(155\,93\,229\,0\.15\)\] { border-color: rgba(123,47,247,0.18) !important; }

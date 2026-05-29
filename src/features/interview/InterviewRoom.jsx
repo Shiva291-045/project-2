@@ -7,22 +7,92 @@ import { Button, Badge } from "../../components/ui";
 import {
   Mic, MicOff, Send, StopCircle, RotateCcw, CheckCircle,
   AlertTriangle, Clock, Brain, MessageSquare, Code2, Users,
-  TrendingUp, ChevronRight, Star, Crown, Sparkles,
+  TrendingUp, ChevronRight, Star, Crown, Sparkles, ChevronDown,
+  Wifi, WifiOff, RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import api from "../../services/apiClient";
+import api, { withRetry } from "../../services/apiClient";
 
-/* ─── Modes ────────────────────────────────────────────────────── */
+/* ─── Interview Modes ──────────────────────────────────────────── */
 const MODES = [
   { id: "technical",  label: "Technical",  icon: Code2,         color: "from-neon-blue to-neon-cyan",   desc: "DSA, system design, coding" },
   { id: "behavioral", label: "Behavioral", icon: Users,         color: "from-brand-500 to-neon-pink",   desc: "STAR method, leadership" },
   { id: "hr",         label: "HR Round",   icon: MessageSquare, color: "from-neon-cyan to-neon-purple",  desc: "Culture fit, career goals" },
 ];
+
 const DIFFICULTIES    = ["Easy", "Medium", "Hard"];
 const DURATION_OPTIONS = [5, 10, 15, 20];
 const STORAGE_KEY      = "prepai_interview_history";
 
-/* ─── Diverse opening question banks ───────────────────────────── */
+/* ─── 20 Interview Roles ────────────────────────────────────────── */
+const ROLES = [
+  "Software Engineer",
+  "Frontend Developer",
+  "Backend Developer",
+  "Full Stack Developer",
+  "AI Engineer",
+  "Machine Learning Engineer",
+  "Data Scientist",
+  "Cloud Engineer",
+  "DevOps Engineer",
+  "Cybersecurity Analyst",
+  "UI/UX Designer",
+  "Mobile App Developer",
+  "Blockchain Developer",
+  "Product Manager",
+  "QA Engineer",
+  "System Design Engineer",
+  "Site Reliability Engineer",
+  "Data Engineer",
+  "Solutions Architect",
+  "Engineering Manager",
+];
+
+/* ─── Role-specific opening question banks ──────────────────────── */
+const ROLE_QUESTION_BANKS = {
+  "AI Engineer": {
+    technical: [
+      "Explain the transformer architecture and why attention mechanisms were a breakthrough over RNNs.",
+      "How would you approach fine-tuning a large language model for a domain-specific task?",
+      "What's the difference between RAG and fine-tuning, and when would you choose each?",
+      "Describe how you'd design a production ML pipeline for real-time inference.",
+      "How do you handle model drift and performance degradation in production?",
+    ],
+    behavioral: [
+      "Tell me about an AI/ML project where results didn't meet expectations and how you responded.",
+      "Describe a time you had to explain a complex AI concept to a non-technical stakeholder.",
+      "How have you kept up with the rapidly evolving AI landscape?",
+    ],
+  },
+  "Cloud Engineer": {
+    technical: [
+      "Compare AWS, GCP, and Azure for a microservices-based SaaS product — what would you choose and why?",
+      "How would you design a multi-region, highly available architecture with <99.99% downtime tolerance?",
+      "Explain Kubernetes pod scheduling and how you'd handle resource constraints.",
+      "What's your approach to cloud cost optimization at scale?",
+      "Describe how you'd implement a zero-trust security model in a cloud environment.",
+    ],
+    behavioral: [
+      "Tell me about a major outage you managed. What was your incident response process?",
+      "Describe a time you had to migrate a legacy system to the cloud.",
+    ],
+  },
+  "DevOps Engineer": {
+    technical: [
+      "Walk me through a CI/CD pipeline you've built from scratch.",
+      "How would you implement blue-green deployments with zero downtime?",
+      "Explain the differences between Docker and Kubernetes and when you'd use each.",
+      "How do you approach monitoring and observability in a distributed system?",
+      "Describe your strategy for secrets management and security in pipelines.",
+    ],
+    behavioral: [
+      "Tell me about a deployment that went wrong and how you handled the rollback.",
+      "How do you balance velocity with stability when shipping frequently?",
+    ],
+  },
+};
+
+/* ─── Generic question banks per mode ──────────────────────────── */
 const QUESTION_BANKS = {
   technical: [
     "Tell me about yourself and your technical background.",
@@ -35,6 +105,11 @@ const QUESTION_BANKS = {
     "Walk me through how you'd approach designing a URL shortener like bit.ly.",
     "Explain the difference between a process and a thread.",
     "How would you debug a production performance issue with no prior context?",
+    "What design patterns do you use most frequently and why?",
+    "Explain microservices vs monolithic architecture — trade-offs for each.",
+    "How do you approach code reviews? What do you look for?",
+    "Describe your approach to writing testable, maintainable code.",
+    "What is eventual consistency and where have you dealt with it?",
   ],
   behavioral: [
     "Tell me about a time you faced a difficult technical challenge and how you solved it.",
@@ -47,6 +122,8 @@ const QUESTION_BANKS = {
     "Describe a failure you experienced. What did you learn from it?",
     "Tell me about a time you mentored or helped a colleague grow.",
     "Give an example of how you prioritize when everything feels urgent.",
+    "How did you handle a situation where you had to deliver bad news?",
+    "Tell me about a time you improved a process or system significantly.",
   ],
   hr: [
     "Tell me about yourself and what brings you here today.",
@@ -59,12 +136,15 @@ const QUESTION_BANKS = {
     "What's an area you're actively working to improve?",
     "How do you prefer to receive feedback from managers?",
     "Why are you looking to leave your current role?",
+    "What kind of team culture do you thrive in?",
+    "How do you approach work-life balance?",
   ],
 };
 
-/* ─── AI call ──────────────────────────────────────────────────── */
-const callAI = async (messages, system) => {
-  const { data } = await api.post("/api/interview/ai", { messages, systemPrompt: system });
+/* ─── AI call with retry ───────────────────────────────────────── */
+const callAI = async (messages, system, retries = 2) => {
+  const fn = () => api.post("/api/interview/ai", { messages, systemPrompt: system });
+  const { data } = await withRetry(fn, retries, 1000);
   return data?.data?.text || "";
 };
 
@@ -74,6 +154,63 @@ const saveHistory = (session) => {
     h.unshift({ ...session, savedAt: new Date().toISOString() });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(0, 20)));
   } catch (e) {}
+};
+
+/* ─── Role Selector Component ───────────────────────────────────── */
+const RoleSelector = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = ROLES.filter(r => r.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all text-left flex items-center justify-between"
+      >
+        <span>{value || "Select a role..."}</span>
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className="absolute top-full left-0 right-0 mt-2 z-50 glass-strong rounded-xl border border-[rgba(155,93,229,0.2)] shadow-xl overflow-hidden"
+          >
+            <div className="p-2 border-b border-[rgba(155,93,229,0.1)]">
+              <input
+                autoFocus
+                value={query} onChange={e => setQuery(e.target.value)}
+                placeholder="Search roles..."
+                className="w-full px-3 py-2 bg-transparent text-white text-sm placeholder-gray-600 outline-none"
+              />
+            </div>
+            <div className="max-h-52 overflow-y-auto py-1">
+              {filtered.map(role => (
+                <button
+                  key={role} type="button"
+                  onClick={() => { onChange(role); setOpen(false); setQuery(""); }}
+                  className={`w-full px-4 py-2.5 text-left text-sm transition-all ${value === role ? "bg-brand-500/20 text-brand-300" : "text-gray-300 hover:bg-white/5 hover:text-white"}`}
+                >
+                  {role}
+                </button>
+              ))}
+              {filtered.length === 0 && <p className="px-4 py-3 text-sm text-gray-600">No roles found</p>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 };
 
 /* ─── Setup Screen ──────────────────────────────────────────────── */
@@ -138,14 +275,10 @@ const SetupScreen = ({ onStart }) => {
           </div>
         </motion.div>
 
-        {/* Role input */}
+        {/* Role selector */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)] mb-6">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Target Role</h3>
-          <input
-            value={role} onChange={e => setRole(e.target.value)}
-            placeholder="e.g. Software Engineer, Data Scientist..."
-            className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all"
-          />
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Target Role <span className="text-gray-600">(20 roles available)</span></h3>
+          <RoleSelector value={role} onChange={setRole} />
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
@@ -153,7 +286,7 @@ const SetupScreen = ({ onStart }) => {
             <Brain className="w-5 h-5" /> Start Interview Session
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <p className="text-center text-xs text-gray-600 mt-3">AI will adapt questions based on your answers — just like a real interviewer</p>
+          <p className="text-center text-xs text-gray-600 mt-3">AI remembers your answers, avoids repeated questions, and asks intelligent follow-ups</p>
         </motion.div>
       </div>
     </PageWrapper>
@@ -198,59 +331,65 @@ const Message = ({ role, content, score, feedback }) => (
 
 /* ─── Interview Session ─────────────────────────────────────────── */
 const InterviewSession = ({ config, onEnd }) => {
-  const { userProfile } = useAuth();
-  const [messages,     setMessages]     = useState([]);
-  const [input,        setInput]        = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [timeLeft,     setTimeLeft]     = useState(config.duration * 60);
-  const [questionCount, setQuestionCount] = useState(0);
-  const [scores,       setScores]       = useState([]);
-  const [usedQuestions, setUsedQuestions] = useState(new Set());
-  const [pendingScore, setPendingScore] = useState(null);
+  const [messages,       setMessages]       = useState([]);
+  const [input,          setInput]          = useState("");
+  const [loading,        setLoading]        = useState(false);
+  const [connectionErr,  setConnectionErr]  = useState(false);
+  const [timeLeft,       setTimeLeft]       = useState(config.duration * 60);
+  const [questionCount,  setQuestionCount]  = useState(0);
+  const [scores,         setScores]         = useState([]);
+  const [askedQuestions, setAskedQuestions] = useState(new Set());
   const bottomRef = useRef(null);
   const timerRef  = useRef(null);
 
-  // Build dynamic system prompt
-  const systemPrompt = useMemo(() => `You are an expert ${config.mode} interviewer for a ${config.difficulty.toLowerCase()}-level ${config.role} position.
+  // Build rich context-aware system prompt
+  const systemPrompt = useMemo(() => {
+    const roleBank = ROLE_QUESTION_BANKS[config.role];
+    const roleContext = roleBank ? `\nRole-specific focus areas for ${config.role} are available in your context.` : "";
+    return `You are an expert ${config.mode} interviewer at a top tech company conducting a ${config.difficulty.toLowerCase()}-level interview for a ${config.role} position.
 
-CRITICAL RULES:
-1. NEVER repeat a question that has already been asked in this conversation
-2. Ask dynamic FOLLOW-UP questions based on what the candidate just said — probe deeper, challenge assumptions, ask for examples
-3. If their answer is vague, ask them to elaborate with specifics
-4. If their answer is strong, increase difficulty naturally
-5. Validate answer relevance — if they go off-topic, redirect politely
-6. Keep a natural conversational tone — don't be robotic
-7. After EACH answer, provide:
-   - A brief, honest score out of 10
-   - One specific improvement tip
-   - Then naturally transition to your next question
+CORE BEHAVIORAL RULES:
+1. NEVER repeat a question that has already been asked — track the full conversation history
+2. Ask ONE question at a time — never multiple questions in one response
+3. Based on the candidate's last answer, ask an intelligent FOLLOW-UP that:
+   - If answer was vague → ask for specifics: "Can you walk me through a concrete example?"
+   - If answer was strong → increase difficulty: probe edge cases, trade-offs, or deeper concepts
+   - If answer was off-topic → redirect: "I appreciate that, but let's refocus on [topic]"
+   - If answer revealed a gap → explore it: ask them to explain the concept they seemed uncertain about
+4. Validate answer relevance — if they answer a different question, acknowledge and redirect
+5. Maintain conversation memory — reference earlier answers to show you're tracking
 
-Format responses as:
-FEEDBACK: [1-2 sentence honest assessment]
+RESPONSE FORMAT (strictly follow this):
+FEEDBACK: [2-3 sentence honest assessment of their specific answer — be constructive, not generic]
 SCORE: [X/10]
-NEXT: [Your follow-up or next question]
+NEXT: [Your next question — make it a natural follow-up to what they just said]
 
 Difficulty: ${config.difficulty}
 Role: ${config.role}
-Type: ${config.mode}
-Questions asked so far: ${questionCount}`, [config, questionCount]);
+Interview Type: ${config.mode}
+Questions asked: ${questionCount}${roleContext}
 
-  // Get a random unused opening question
+Remember: Great interviewers make candidates feel heard while probing for depth.`;
+  }, [config, questionCount]);
+
+  // Get opening question — role-specific if available, else from generic bank
   const getOpeningQuestion = useCallback(() => {
-    const bank = QUESTION_BANKS[config.mode] || QUESTION_BANKS.behavioral;
-    const available = bank.filter(q => !usedQuestions.has(q));
-    const pool = available.length > 0 ? available : bank;
+    const roleBank = ROLE_QUESTION_BANKS[config.role];
+    const modeBank = roleBank?.[config.mode] || QUESTION_BANKS[config.mode] || QUESTION_BANKS.behavioral;
+    const available = modeBank.filter(q => !askedQuestions.has(q));
+    const pool = available.length > 0 ? available : modeBank;
     const q = pool[Math.floor(Math.random() * pool.length)];
-    setUsedQuestions(prev => new Set([...prev, q]));
+    setAskedQuestions(prev => new Set([...prev, q]));
     return q;
-  }, [config.mode, usedQuestions]);
+  }, [config.mode, config.role, askedQuestions]);
 
-  // Start with opening question
+  // Start session
   useEffect(() => {
     const opener = getOpeningQuestion();
-    setMessages([{ role: "assistant", content: `Hello! I'm your AI interviewer for this ${config.mode} session. Let's begin!\n\n${opener}` }]);
+    const greeting = `Hello! I'm your AI interviewer for this ${config.mode} session for the ${config.role} role. Let's make this feel like a real interview — be as detailed as you'd be with a hiring manager.\n\n${opener}`;
+    setMessages([{ role: "assistant", content: greeting }]);
     setQuestionCount(1);
-    // Start timer
+
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) { clearInterval(timerRef.current); handleEnd(); return 0; }
@@ -266,44 +405,52 @@ Questions asked so far: ${questionCount}`, [config, questionCount]);
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
     setInput("");
+    setConnectionErr(false);
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
 
     try {
-      // Build conversation history for context
-      const history = messages.map(m => ({ role: m.role, content: m.content }));
-      history.push({ role: "user", content: userMsg });
+      // Full conversation history for context
+      const history = [
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        { role: "user", content: userMsg },
+      ];
 
       const aiText = await callAI(history, systemPrompt);
 
-      // Parse score from response
-      const scoreMatch  = aiText.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
-      const feedbackMatch = aiText.match(/FEEDBACK:\s*(.+?)(?:\n|SCORE:)/is);
-      const nextMatch   = aiText.match(/NEXT:\s*(.+?)$/is);
+      // Parse structured response
+      const scoreMatch   = aiText.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+      const feedbackMatch = aiText.match(/FEEDBACK:\s*(.+?)(?=\nSCORE:|SCORE:)/is);
+      const nextMatch    = aiText.match(/NEXT:\s*([\s\S]+?)$/i);
 
-      const score    = scoreMatch    ? parseFloat(scoreMatch[1])    : null;
-      const feedback = feedbackMatch ? feedbackMatch[1].trim()      : null;
-      const nextQ    = nextMatch     ? nextMatch[1].trim()          : null;
+      const score    = scoreMatch    ? parseFloat(scoreMatch[1])   : null;
+      const feedback = feedbackMatch ? feedbackMatch[1].trim()     : null;
+      const nextQ    = nextMatch     ? nextMatch[1].trim()         : null;
 
-      // Clean display text — show full response naturally
-      const displayText = nextQ
-        ? `${feedback ? feedback + "\n\n" : ""}${nextQ}`
-        : aiText.replace(/FEEDBACK:.*?\n/is, "").replace(/SCORE:.*?\n/i, "").replace(/NEXT:/i, "").trim();
+      // Track the new question to avoid repeats
+      if (nextQ) setAskedQuestions(prev => new Set([...prev, nextQ]));
 
-      if (score !== null) {
-        setScores(prev => [...prev, score]);
-        setPendingScore({ score, feedback });
-      }
+      // Build clean display text
+      let displayText = "";
+      if (feedback) displayText += feedback + "\n\n";
+      if (nextQ)    displayText += nextQ;
+      if (!displayText) displayText = aiText.replace(/FEEDBACK:.*?\n/is, "").replace(/SCORE:.*?\n/i, "").replace(/NEXT:/i, "").trim();
+
+      if (score !== null) setScores(prev => [...prev, score]);
 
       setMessages(prev => [
         ...prev.slice(0, -1),
-        { ...prev[prev.length - 1], score: score || undefined, feedback: feedback?.substring(0, 60) },
+        { ...prev[prev.length - 1], score: score ?? undefined, feedback: feedback?.substring(0, 70) },
         { role: "assistant", content: displayText },
       ]);
       setQuestionCount(q => q + 1);
     } catch (err) {
-      toast.error("AI response failed. Check your connection.");
-      setMessages(prev => [...prev, { role: "assistant", content: "I'm having trouble connecting. Please try sending your response again." }]);
+      console.error("AI call failed:", err);
+      setConnectionErr(true);
+      toast.error(err.message || "AI response failed. Tap retry or check connection.");
+      // Remove the user message on failure so they can retry
+      setMessages(prev => [...prev.slice(0, -1)]);
+      setInput(userMsg);
     }
     setLoading(false);
   };
@@ -337,17 +484,22 @@ Questions asked so far: ${questionCount}`, [config, questionCount]);
         </button>
       </div>
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="glass-strong border-b border-[rgba(155,93,229,0.1)] px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="glass-strong border-b border-[rgba(155,93,229,0.1)] px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-4 flex-wrap">
             <Badge variant={config.mode === "technical" ? "cyan" : config.mode === "behavioral" ? "primary" : "success"} className="capitalize">
               {config.mode}
             </Badge>
             <Badge variant="default">{config.difficulty}</Badge>
-            <span className="text-xs text-gray-500">{config.role}</span>
+            <span className="text-xs text-gray-500 hidden sm:block">{config.role}</span>
           </div>
           <div className="flex items-center gap-5">
+            {connectionErr && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-400">
+                <WifiOff className="w-3.5 h-3.5" /> Connection issue
+              </div>
+            )}
             {scores.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <Star className="w-4 h-4 text-amber-400" />
@@ -371,11 +523,12 @@ Questions asked so far: ${questionCount}`, [config, questionCount]);
                 <Brain className="w-4 h-4 text-white" />
               </div>
               <div className="glass rounded-2xl px-4 py-3 border border-[rgba(155,93,229,0.15)]">
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 items-center">
                   {[0,1,2].map(i => (
                     <motion.div key={i} className="w-2 h-2 rounded-full bg-neon-purple"
                       animate={{ scale: [1,1.4,1] }} transition={{ delay: i*0.15, repeat: Infinity, duration: 0.9 }} />
                   ))}
+                  <span className="text-xs text-gray-600 ml-2">Thinking...</span>
                 </div>
               </div>
             </motion.div>
@@ -384,7 +537,17 @@ Questions asked so far: ${questionCount}`, [config, questionCount]);
         </div>
 
         {/* Input */}
-        <div className="glass-strong border-t border-[rgba(155,93,229,0.1)] px-6 py-4">
+        <div className="glass-strong border-t border-[rgba(155,93,229,0.1)] px-6 py-4 flex-shrink-0">
+          {connectionErr && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-3 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 text-xs text-amber-400"
+            >
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              Connection issue — your answer was restored. Check your network and try again.
+              <button onClick={() => setConnectionErr(false)} className="ml-auto text-gray-500 hover:text-white"><RefreshCw className="w-3.5 h-3.5" /></button>
+            </motion.div>
+          )}
           <div className="flex gap-3 items-end">
             <textarea
               value={input}
@@ -403,7 +566,7 @@ Questions asked so far: ${questionCount}`, [config, questionCount]);
               </Button>
             </div>
           </div>
-          <p className="text-xs text-gray-700 mt-2 text-center">AI adapts questions based on your answers · {questionCount} question{questionCount !== 1 ? "s" : ""} so far</p>
+          <p className="text-xs text-gray-700 mt-2 text-center">AI tracks context and adapts questions · {questionCount} question{questionCount !== 1 ? "s" : ""} so far · {config.role}</p>
         </div>
       </div>
     </div>
@@ -430,7 +593,7 @@ const ResultsScreen = ({ session, onRestart }) => {
             <img src="/logo.png" alt="PrepAI" className="w-20 h-20 mx-auto rounded-2xl shadow-brand mb-6" />
           </motion.div>
           <h2 className="font-display text-4xl font-extrabold text-white mb-2">Session Complete!</h2>
-          <p className="text-gray-400">Here's how you performed</p>
+          <p className="text-gray-400">Here's how you performed as {session.role}</p>
         </motion.div>
 
         <motion.div
@@ -474,12 +637,12 @@ const ResultsScreen = ({ session, onRestart }) => {
 
 /* ─── Main component ────────────────────────────────────────────── */
 export const InterviewRoom = () => {
-  const [phase,   setPhase]   = useState("setup"); // setup | session | results
+  const [phase,   setPhase]   = useState("setup");
   const [config,  setConfig]  = useState(null);
   const [results, setResults] = useState(null);
 
-  const handleStart = (cfg) => { setConfig(cfg); setPhase("session"); };
-  const handleEnd   = (res) => { setResults(res); setPhase("results"); };
+  const handleStart   = (cfg) => { setConfig(cfg); setPhase("session"); };
+  const handleEnd     = (res) => { setResults(res); setPhase("results"); };
   const handleRestart = () => { setConfig(null); setResults(null); setPhase("setup"); };
 
   if (phase === "setup")   return <SetupScreen onStart={handleStart} />;

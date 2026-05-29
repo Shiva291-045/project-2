@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, MessageSquare, FileText, Code2,
   TrendingUp, Trophy, User, ChevronLeft, ChevronRight,
-  Crown, Sparkles, Zap,
+  Crown, Sparkles,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import clsx from "clsx";
+
+const SIDEBAR_KEY = "prepai_sidebar_collapsed";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard",   href: "/dashboard",   color: "text-neon-purple" },
@@ -20,10 +22,26 @@ const menuItems = [
 ];
 
 export const Sidebar = () => {
-  const [collapsed, setCollapsed] = useState(false);
+  // ✅ Collapsed by default — only expand if user previously opened it
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_KEY);
+      return stored === null ? true : stored === "true";
+    } catch { return true; }
+  });
+
   const location  = useLocation();
   const { userProfile } = useAuth();
   const isPremium = userProfile?.isPremium || false;
+
+  // Persist user preference
+  const toggle = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
 
   const isActive = (href) => location.pathname === href || location.pathname.startsWith(href + "/");
 
@@ -38,8 +56,9 @@ export const Sidebar = () => {
     >
       {/* Collapse toggle */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={toggle}
         className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-surface-elevated border border-[rgba(155,93,229,0.3)] flex items-center justify-center text-gray-400 hover:text-white hover:border-neon-purple/60 transition-all duration-200 z-10 shadow-[0_0_10px_rgba(0,0,0,0.4)]"
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {collapsed
           ? <ChevronRight className="w-3 h-3" />
@@ -69,14 +88,13 @@ export const Sidebar = () => {
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 />
               )}
-              {/* Active left bar */}
               {active && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-r bg-neon-purple shadow-[0_0_8px_rgba(155,93,229,0.8)]" />
               )}
               <item.icon
                 className={clsx(
                   "w-5 h-5 flex-shrink-0 relative z-10 transition-all duration-200",
-                  active ? item.color : "text-gray-500 group-hover:" + item.color.replace("text-", "text-")
+                  active ? item.color : "text-gray-500 group-hover:text-gray-300"
                 )}
               />
               <AnimatePresence>
@@ -110,14 +128,12 @@ export const Sidebar = () => {
             </div>
             <p className="text-xs text-gray-500 leading-relaxed">Unlock unlimited interviews & advanced AI</p>
             <div className="mt-2 flex items-center gap-1 text-xs text-neon-purple font-medium group-hover:gap-2 transition-all">
-              <Sparkles className="w-3 h-3" />
-              Upgrade now
+              <Sparkles className="w-3 h-3" /> Upgrade now
             </div>
           </Link>
         </div>
       )}
 
-      {/* Collapsed premium */}
       {collapsed && !isPremium && (
         <div className="px-3 pb-4">
           <Link to="/pricing" title="Upgrade to Premium" className="flex items-center justify-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-400/30 hover:border-amber-400/60 transition-all">
