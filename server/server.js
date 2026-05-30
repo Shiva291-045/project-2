@@ -36,7 +36,39 @@ const PORT = process.env.PORT || 5001;
 connectDB();
 
 // ── Security ──────────────────────────────────────────────────────────────────
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy:   false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:  ["'self'"],
+      scriptSrc:   ["'self'"],                             // no unsafe-eval
+      styleSrc:    ["'self'", "'unsafe-inline'"],          // UI libs need inline styles
+      imgSrc:      ["'self'", "data:", "blob:", "https:"],
+      fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
+      connectSrc: [
+        "'self'",
+        "https://api.anthropic.com",
+        "https://judge0-ce.p.rapidapi.com",
+        "https://*.onrender.com",
+        "https://*.vercel.app",
+        "https://api.razorpay.com",
+        "https://firestore.googleapis.com",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://*.firebase.com",
+        "https://*.firebaseio.com",
+        ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+      ],
+      frameSrc:    ["'self'"],     // sandboxed iframe JS runner
+      workerSrc:   ["'self'", "blob:"], // Monaco/pdfjs blob workers
+      childSrc:    ["'self'", "blob:"],
+      objectSrc:   ["'none'"],
+      baseUri:     ["'self'"],
+      formAction:  ["'self'"],
+    },
+  },
+}));
 
 // ── CORS — accept Vercel, Render, Netlify, localhost ─────────────────────────
 const buildAllowedOrigins = () => {

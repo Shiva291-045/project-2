@@ -43,9 +43,12 @@ const quickCheck = (text, fileName) => {
 const extractPdfText = async (base64) => {
   try {
     const pdfjsLib = await import("pdfjs-dist/build/pdf");
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
+    // CSP-safe: disable the Web Worker entirely — pdfjs runs in the main thread.
+    // This avoids loading any external script (cdnjs, etc.) which would violate CSP.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    // Alternatively for pdfjs v4+:
+    // pdfjsLib.GlobalWorkerOptions.workerPort = null;
+    const pdf = await pdfjsLib.getDocument({ data: atob(base64), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
     let text = "";
     for (let i = 1; i <= Math.min(pdf.numPages, 6); i++) {
       const page = await pdf.getPage(i);

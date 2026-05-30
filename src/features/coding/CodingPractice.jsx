@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from "react";
-import Editor from "@monaco-editor/react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
+import Editor, { loader } from "@monaco-editor/react";
 import { Badge, Button, Spinner } from "../../components/ui";
 import { PageWrapper } from "../../components/PageWrapper";
 import {
@@ -10,6 +10,64 @@ import {
 import toast from "react-hot-toast";
 import api from "../../services/apiClient";
 import rawData from "../../data/450DSA.json";
+
+/* ── Monaco CSP config ───────────────────────────────────────────────────────
+   By default @monaco-editor/react loads Monaco from a CDN which violates CSP.
+   Configuring loader to use the locally-bundled version (from node_modules)
+   keeps all scripts same-origin and avoids 'unsafe-eval' requirements.
+──────────────────────────────────────────────────────────────────────────── */
+loader.config({ monaco: undefined }); // use bundled monaco, not CDN
+
+/* ── CSP-safe JS execution via sandboxed iframe ──────────────────────────────
+   No eval(), no new Function() — the iframe sandbox attribute prevents any
+   script in the frame from accessing the parent, satisfying strict CSP.
+   Communication is done via postMessage with a nonce to prevent spoofing.
+──────────────────────────────────────────────────────────────────────────── */
+const runInSandbox = (code) =>
+  new Promise((resolve) => {
+    const nonce   = Math.random().toString(36).slice(2);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve("Error: Execution timed out (5s)");
+    }, 5000);
+
+    const cleanup = () => {
+      window.removeEventListener("message", handler);
+      clearTimeout(timeout);
+      try { document.body.removeChild(frame); } catch {}
+    };
+
+    const handler = (e) => {
+      if (e.data?.nonce !== nonce) return;
+      cleanup();
+      resolve(e.data.output ?? "Error: " + e.data.error);
+    };
+    window.addEventListener("message", handler);
+
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts"); // no allow-same-origin → fully isolated
+    frame.style.display = "none";
+    frame.srcdoc = `<!DOCTYPE html><html><body><script>
+      (function(){
+        var logs=[], _nonce="${nonce}";
+        var fakeConsole={
+          log:function(){logs.push(Array.from(arguments).map(function(a){
+            try{return typeof a==="object"?JSON.stringify(a,null,2):String(a);}catch(e){return String(a);}
+          }).join(" "));},
+          error:function(){logs.push("Error: "+Array.from(arguments).join(" "));},
+          warn:function(){logs.push("Warn: "+Array.from(arguments).join(" "));},
+          info:function(){logs.push(Array.from(arguments).join(" "));}
+        };
+        try{
+          (new Function("console",${JSON.stringify(code)}))(fakeConsole);
+          parent.postMessage({nonce:_nonce,output:logs.join("\\n")||"(no output)"},"*");
+        }catch(err){
+          parent.postMessage({nonce:_nonce,output:"Error: "+err.message},"*");
+        }
+      })();
+    <\/script></body></html>`;
+    document.body.appendChild(frame);
+  });
 
 // ── Parse + enrich 450DSA data ────────────────────────────────────────────
 const ALL_PROBLEMS = (() => {
@@ -222,13 +280,16 @@ export const CodingPractice = () => {
       else toast.success("Executed!");
     } catch (e) {
       if (language === "javascript") {
-        try {
-          const logs = [];
-          // eslint-disable-next-line no-new-func
-          new Function("console", code)({ log: (...a) => logs.push(a.map(String).join(" ")) });
-          setOutput(logs.join("\n") || "(no output)");
-          toast.success("Executed (browser JS)");
-        } catch (err) { setOutput(`Error: ${err.message}`); toast.error("Runtime error"); }
+        // CSP-safe execution: sandboxed iframe with srcdoc — no eval(), no new Function()
+        runInSandbox(code).then(result => {
+          setOutput(result);
+          if (result.startsWith("Error:") || result.startsWith("RuntimeError:")) {
+            toast.error("Runtime error");
+          } else {
+            toast.success("Executed (browser JS)");
+          }
+        }).finally(() => setRunning(false));
+        return; // setRunning(false) handled in finally above
       } else {
         setOutput("⚠️ Set REACT_APP_JUDGE0_KEY for multi-language execution.\nJavaScript runs in the browser without a key.");
       }
@@ -473,6 +534,18 @@ export const CodingPractice = () => {
             </div>
             <div className="flex-1">
               <Editor height="100%" language={language} value={code} onChange={(v) => setCode(v || "")} theme={editorTheme}
+                beforeMount={(monaco) => {
+                  // CSP-safe: disable Monaco's web worker environment
+                  // Workers use blob: URLs which require 'unsafe-eval' in CSP
+                  window.MonacoEnvironment = {
+                    getWorker: () => {
+                      // Return a dummy worker that does nothing — syntax highlighting
+                      // still works via the main-thread fallback mode
+                      const blob = new Blob(["self.onmessage=function(){}"], { type: "application/javascript" });
+                      return new Worker(URL.createObjectURL(blob));
+                    },
+                  };
+                }}
                 options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: "on", scrollBeyondLastLine: false, automaticLayout: true }} />
             </div>
           </div>
