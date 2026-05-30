@@ -158,58 +158,110 @@ const saveHistory = (session) => {
 
 /* ─── Role Selector Component ───────────────────────────────────── */
 const RoleSelector = ({ value, onChange }) => {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const ref = useRef(null);
+  const [open,   setOpen]   = useState(false);
+  const [query,  setQuery]  = useState("");
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef(null);
+  const dropRef    = useRef(null);
 
+  // Close on outside click
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (
+        triggerRef.current && !triggerRef.current.contains(e.target) &&
+        dropRef.current    && !dropRef.current.contains(e.target)
+      ) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Recalculate position whenever open toggles or window resizes
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const update = () => {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + window.scrollY + 8, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
   const filtered = ROLES.filter(r => r.toLowerCase().includes(query.toLowerCase()));
 
   return (
-    <div ref={ref} className="relative">
+    <>
+      {/* Trigger button */}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all text-left flex items-center justify-between"
       >
-        <span>{value || "Select a role..."}</span>
-        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className={value ? "text-white" : "text-gray-500"}>{value || "Select a role..."}</span>
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
+
+      {/* Portal dropdown — rendered in document.body so it never overlaps siblings */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            className="absolute top-full left-0 right-0 mt-2 z-50 glass-strong rounded-xl border border-[rgba(155,93,229,0.2)] shadow-xl overflow-hidden"
+            ref={dropRef}
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0,  scale: 1    }}
+            exit={{   opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+            style={{
+              position: "fixed",
+              top:      coords.top,
+              left:     coords.left,
+              width:    coords.width,
+              zIndex:   9999,
+            }}
+            className="glass-strong rounded-xl border border-[rgba(155,93,229,0.25)] shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden"
           >
-            <div className="p-2 border-b border-[rgba(155,93,229,0.1)]">
+            {/* Search */}
+            <div className="p-2 border-b border-[rgba(155,93,229,0.12)]">
               <input
                 autoFocus
-                value={query} onChange={e => setQuery(e.target.value)}
-                placeholder="Search roles..."
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search roles…"
                 className="w-full px-3 py-2 bg-transparent text-white text-sm placeholder-gray-600 outline-none"
               />
             </div>
-            <div className="max-h-52 overflow-y-auto py-1">
+            {/* List */}
+            <div className="max-h-56 overflow-y-auto py-1">
               {filtered.map(role => (
                 <button
-                  key={role} type="button"
+                  key={role}
+                  type="button"
                   onClick={() => { onChange(role); setOpen(false); setQuery(""); }}
-                  className={`w-full px-4 py-2.5 text-left text-sm transition-all ${value === role ? "bg-brand-500/20 text-brand-300" : "text-gray-300 hover:bg-white/5 hover:text-white"}`}
+                  className={`w-full px-4 py-2.5 text-left text-sm transition-all ${
+                    value === role
+                      ? "bg-brand-500/20 text-brand-300 font-medium"
+                      : "text-gray-300 hover:bg-white/5 hover:text-white"
+                  }`}
                 >
                   {role}
                 </button>
               ))}
-              {filtered.length === 0 && <p className="px-4 py-3 text-sm text-gray-600">No roles found</p>}
+              {filtered.length === 0 && (
+                <p className="px-4 py-3 text-sm text-gray-600 text-center">No roles found</p>
+              )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 };
 
@@ -275,18 +327,39 @@ const SetupScreen = ({ onStart }) => {
           </div>
         </motion.div>
 
-        {/* Role selector */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)] mb-6">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Target Role <span className="text-gray-600">(20 roles available)</span></h3>
-          <RoleSelector value={role} onChange={setRole} />
+        {/* Role selector — extra bottom padding so dropdown never overlaps what's below */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)] mb-6"
+          style={{ isolation: "isolate" }}
+        >
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">
+            Target Role{" "}
+            <span className="text-gray-600">(20 roles available)</span>
+          </h3>
+          {/* Wrapper gives the trigger a stable size; dropdown escapes via fixed positioning */}
+          <div className="relative">
+            <RoleSelector value={role} onChange={setRole} />
+          </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-          <Button variant="primary" size="xl" className="w-full shadow-brand-lg" onClick={() => onStart({ mode, difficulty, duration, role })}>
-            <Brain className="w-5 h-5" /> Start Interview Session
+        {/* ── Start button — always rendered BELOW the role card, never overlapped ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="relative z-0 mt-2"
+        >
+          <Button
+            variant="primary" size="xl"
+            className="w-full shadow-brand-lg"
+            onClick={() => onStart({ mode, difficulty, duration, role })}
+          >
+            <Brain className="w-5 h-5" />
+            Start Interview Session
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <p className="text-center text-xs text-gray-600 mt-3">AI remembers your answers, avoids repeated questions, and asks intelligent follow-ups</p>
+          <p className="text-center text-xs text-gray-600 mt-3">
+            AI remembers your answers, avoids repeated questions, and asks intelligent follow-ups
+          </p>
         </motion.div>
       </div>
     </PageWrapper>
