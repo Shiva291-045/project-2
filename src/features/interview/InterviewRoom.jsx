@@ -156,21 +156,21 @@ const saveHistory = (session) => {
   } catch (e) {}
 };
 
-/* ─── Role Selector Component ───────────────────────────────────── */
+/* ─── Role Selector ─────────────────────────────────────────────────────────
+   Design: the dropdown is part of normal document flow — no absolute/fixed/
+   z-index tricks. When open, the list simply renders below the trigger inside
+   the same block, pushing every sibling below it downward naturally.
+   The page is scrollable so no clipping ever occurs.
+──────────────────────────────────────────────────────────────────────────── */
 const RoleSelector = ({ value, onChange }) => {
-  const [open,   setOpen]   = useState(false);
-  const [query,  setQuery]  = useState("");
-  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
-  const triggerRef = useRef(null);
-  const dropRef    = useRef(null);
+  const [open,  setOpen]  = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef  = useRef(null);
+  const inputRef = useRef(null);
 
-  // Close on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (
-        triggerRef.current && !triggerRef.current.contains(e.target) &&
-        dropRef.current    && !dropRef.current.contains(e.target)
-      ) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
         setOpen(false);
         setQuery("");
       }
@@ -179,117 +179,136 @@ const RoleSelector = ({ value, onChange }) => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Recalculate position whenever open toggles or window resizes
+  // Focus search when opened
   useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const update = () => {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setCoords({ top: rect.bottom + window.scrollY + 8, left: rect.left, width: rect.width });
-    };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
 
-  const filtered = ROLES.filter(r => r.toLowerCase().includes(query.toLowerCase()));
+  const filtered = ROLES.filter(r =>
+    r.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const handleSelect = (r) => { onChange(r); setOpen(false); setQuery(""); };
 
   return (
-    <>
-      {/* Trigger button */}
+    <div ref={wrapRef} className="w-full">
+
+      {/* ── Trigger button ── */}
       <button
-        ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all text-left flex items-center justify-between"
+        className={[
+          "w-full flex items-center justify-between px-4 py-3 text-sm font-medium",
+          "border transition-colors duration-150",
+          open
+            ? "bg-[rgba(123,47,247,0.08)] border-neon-purple/50 rounded-t-xl rounded-b-none"
+            : "bg-[rgba(255,255,255,0.04)] border-[rgba(155,93,229,0.2)] rounded-xl",
+          "hover:bg-[rgba(255,255,255,0.06)] focus:outline-none",
+        ].join(" ")}
       >
-        <span className={value ? "text-white" : "text-gray-500"}>{value || "Select a role..."}</span>
-        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+        <span className={value ? "text-white" : "text-gray-500"}>
+          {value || "Select a role…"}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {/* Portal dropdown — rendered in document.body so it never overlaps siblings */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            ref={dropRef}
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0,  scale: 1    }}
-            exit={{   opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ duration: 0.15 }}
-            style={{
-              position: "fixed",
-              top:      coords.top,
-              left:     coords.left,
-              width:    coords.width,
-              zIndex:   9999,
-            }}
-            className="glass-strong rounded-xl border border-[rgba(155,93,229,0.25)] shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden"
+      {/* ── Inline panel — part of document flow, pushes siblings down ── */}
+      {open && (
+        <div className="w-full border border-t-0 border-neon-purple/30 rounded-b-xl bg-[rgba(10,10,28,0.97)] backdrop-blur-lg">
+
+          {/* Search */}
+          <div className="px-3 py-2.5 border-b border-[rgba(155,93,229,0.12)]">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search roles…"
+              className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-gray-600 bg-[rgba(255,255,255,0.05)] border border-[rgba(155,93,229,0.15)] focus:border-neon-purple/40 focus:outline-none transition-colors"
+            />
+          </div>
+
+          {/* Scrollable list — fixed height so it never grows beyond viewport */}
+          <div
+            className="overflow-y-auto overscroll-contain"
+            style={{ maxHeight: "216px" }}
           >
-            {/* Search */}
-            <div className="p-2 border-b border-[rgba(155,93,229,0.12)]">
-              <input
-                autoFocus
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search roles…"
-                className="w-full px-3 py-2 bg-transparent text-white text-sm placeholder-gray-600 outline-none"
-              />
-            </div>
-            {/* List */}
-            <div className="max-h-56 overflow-y-auto py-1">
-              {filtered.map(role => (
+            {filtered.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-center text-gray-600">No roles found</p>
+            ) : (
+              filtered.map(r => (
                 <button
-                  key={role}
+                  key={r}
                   type="button"
-                  onClick={() => { onChange(role); setOpen(false); setQuery(""); }}
-                  className={`w-full px-4 py-2.5 text-left text-sm transition-all ${
-                    value === role
-                      ? "bg-brand-500/20 text-brand-300 font-medium"
-                      : "text-gray-300 hover:bg-white/5 hover:text-white"
-                  }`}
+                  onClick={() => handleSelect(r)}
+                  className={[
+                    "w-full text-left px-4 py-2.5 text-sm transition-colors duration-100",
+                    value === r
+                      ? "bg-brand-500/20 text-brand-300 font-semibold"
+                      : "text-gray-300 hover:bg-white/[0.06] hover:text-white",
+                  ].join(" ")}
                 >
-                  {role}
+                  {r}
                 </button>
-              ))}
-              {filtered.length === 0 && (
-                <p className="px-4 py-3 text-sm text-gray-600 text-center">No roles found</p>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
-/* ─── Setup Screen ──────────────────────────────────────────────── */
+/* ─── Setup Screen ───────────────────────────────────────────────────────────
+   Layout: plain vertical stack — header, type, difficulty/duration, role, button.
+   No overlap is possible because nothing uses absolute/fixed/z-index.
+   Page is scrollable so the button is always reachable below the role panel.
+──────────────────────────────────────────────────────────────────────────── */
 const SetupScreen = ({ onStart }) => {
   const [mode,       setMode]       = useState("behavioral");
   const [difficulty, setDifficulty] = useState("Medium");
   const [duration,   setDuration]   = useState(10);
   const [role,       setRole]       = useState("Software Engineer");
-  const { userProfile } = useAuth();
-  const isPremium = userProfile?.isPremium;
 
   return (
     <PageWrapper>
-      <div className="max-w-3xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="font-display text-4xl font-extrabold text-white">AI Interview</h1>
-          <p className="text-gray-400 mt-2">Configure your session and practice like it's real</p>
+      <div className="max-w-2xl mx-auto w-full px-1 pb-12">
+
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mb-7"
+        >
+          <h1 className="font-display text-3xl sm:text-4xl font-extrabold text-white leading-tight">
+            AI Interview
+          </h1>
+          <p className="text-gray-400 mt-2 text-sm sm:text-base">
+            Configure your session and practice like it&apos;s real
+          </p>
         </motion.div>
 
-        {/* Mode selection */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.1)] mb-5">
-          <h2 className="font-display font-semibold text-white mb-4">Interview Type</h2>
-          <div className="grid grid-cols-3 gap-3">
+        {/* ── 1. Interview Type ── */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.07 }}
+          className="glass rounded-2xl p-5 sm:p-6 border border-[rgba(155,93,229,0.12)] mb-4"
+        >
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            Interview Type
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {MODES.map(m => (
               <button
-                key={m.id} onClick={() => setMode(m.id)}
-                className={`p-4 rounded-xl border transition-all duration-200 text-left ${mode === m.id ? "border-brand-500/50 bg-brand-500/10" : "border-[rgba(155,93,229,0.1)] hover:border-[rgba(155,93,229,0.3)] hover:bg-white/5"}`}
+                key={m.id}
+                type="button"
+                onClick={() => setMode(m.id)}
+                className={[
+                  "p-4 rounded-xl border text-left transition-all duration-200",
+                  mode === m.id
+                    ? "border-brand-500/50 bg-brand-500/10"
+                    : "border-[rgba(155,93,229,0.1)] hover:border-[rgba(155,93,229,0.3)] hover:bg-white/5",
+                ].join(" ")}
               >
                 <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${m.color} flex items-center justify-center mb-3`}>
                   <m.icon className="w-5 h-5 text-white" />
@@ -299,57 +318,73 @@ const SetupScreen = ({ onStart }) => {
               </button>
             ))}
           </div>
-        </motion.div>
+        </motion.section>
 
-        {/* Difficulty + Duration */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="grid grid-cols-2 gap-4 mb-5">
-          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)]">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">Difficulty</h3>
+        {/* ── 2. Difficulty + Duration ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12 }}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4"
+        >
+          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)]">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Difficulty</h3>
             <div className="flex gap-2">
               {DIFFICULTIES.map(d => (
                 <button
-                  key={d} onClick={() => setDifficulty(d)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${difficulty === d ? "bg-brand-500/20 text-brand-300 border border-brand-500/40" : "text-gray-500 hover:text-white border border-transparent hover:border-[rgba(155,93,229,0.2)]"}`}
+                  key={d} type="button" onClick={() => setDifficulty(d)}
+                  className={[
+                    "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border",
+                    difficulty === d
+                      ? "bg-brand-500/20 text-brand-300 border-brand-500/40"
+                      : "text-gray-500 border-transparent hover:text-white hover:border-[rgba(155,93,229,0.2)] hover:bg-white/5",
+                  ].join(" ")}
                 >{d}</button>
               ))}
             </div>
           </div>
-          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)]">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">Duration</h3>
+
+          <div className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)]">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Duration</h3>
             <div className="flex gap-2">
               {DURATION_OPTIONS.map(d => (
                 <button
-                  key={d} onClick={() => setDuration(d)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${duration === d ? "bg-brand-500/20 text-brand-300 border border-brand-500/40" : "text-gray-500 hover:text-white border border-transparent hover:border-[rgba(155,93,229,0.2)]"}`}
+                  key={d} type="button" onClick={() => setDuration(d)}
+                  className={[
+                    "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border",
+                    duration === d
+                      ? "bg-brand-500/20 text-brand-300 border-brand-500/40"
+                      : "text-gray-500 border-transparent hover:text-white hover:border-[rgba(155,93,229,0.2)] hover:bg-white/5",
+                  ].join(" ")}
                 >{d}m</button>
               ))}
             </div>
           </div>
         </motion.div>
 
-        {/* Role selector — extra bottom padding so dropdown never overlaps what's below */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.1)] mb-6"
-          style={{ isolation: "isolate" }}
+        {/* ── 3. Target Role ──
+            RoleSelector opens DOWNWARD inside this card.
+            The card grows in height to contain the open list.
+            The button below is pushed down by the natural document flow — zero overlap. */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.17 }}
+          className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)] mb-4"
         >
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Target Role{" "}
-            <span className="text-gray-600">(20 roles available)</span>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            Target Role
+            <span className="ml-2 normal-case font-normal text-gray-600">— 20 roles</span>
           </h3>
-          {/* Wrapper gives the trigger a stable size; dropdown escapes via fixed positioning */}
-          <div className="relative">
-            <RoleSelector value={role} onChange={setRole} />
-          </div>
-        </motion.div>
+          <RoleSelector value={role} onChange={setRole} />
+        </motion.section>
 
-        {/* ── Start button — always rendered BELOW the role card, never overlapped ── */}
+        {/* ── 4. Start Button — always the last block, always below everything ── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="relative z-0 mt-2"
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
         >
           <Button
-            variant="primary" size="xl"
+            variant="primary"
+            size="xl"
             className="w-full shadow-brand-lg"
             onClick={() => onStart({ mode, difficulty, duration, role })}
           >
@@ -357,11 +392,12 @@ const SetupScreen = ({ onStart }) => {
             Start Interview Session
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <p className="text-center text-xs text-gray-600 mt-3">
-            AI remembers your answers, avoids repeated questions, and asks intelligent follow-ups
+          <p className="text-center text-xs text-gray-600 mt-3 leading-relaxed">
+            AI remembers your answers · avoids repeated questions · asks intelligent follow-ups
           </p>
         </motion.div>
-      </div>
+
+      </div>{/* /max-w-2xl */}
     </PageWrapper>
   );
 };
