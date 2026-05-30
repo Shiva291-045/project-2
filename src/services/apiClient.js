@@ -1,11 +1,15 @@
 import axios from "axios";
-import toast from "react-hot-toast";
 
-// Resolve backend URL — never fall back to localhost in production
+// ── URL Resolution ─────────────────────────────────────────────────────────────
+// Priority:
+//   1. REACT_APP_API_URL env var  (set in Vercel for production, .env.local for dev override)
+//   2. Empty string               (lets CRA proxy handle it — proxy in package.json = localhost:5001)
+//
+// NEVER hardcode localhost:5001 here so production builds are always clean.
 const getBaseURL = () => {
-  if (process.env.REACT_APP_API_URL) return process.env.REACT_APP_API_URL;
-  // CRA dev proxy handles /api/* → backend via package.json proxy
-  return "";
+  const envUrl = process.env.REACT_APP_API_URL;
+  if (envUrl && envUrl.trim() !== "") return envUrl.trim();
+  return ""; // CRA proxy handles /api/* → package.json "proxy" value
 };
 
 const api = axios.create({
@@ -16,12 +20,16 @@ const api = axios.create({
 });
 
 // ── Retry helper ──────────────────────────────────────────────────────────────
-const withRetry = async (fn, retries = 2, delay = 800) => {
+export const withRetry = async (fn, retries = 2, delay = 800) => {
   for (let i = 0; i <= retries; i++) {
     try { return await fn(); }
     catch (err) {
       if (i === retries) throw err;
-      const isRetryable = !err.response || err.response.status >= 500 || err.code === "ECONNABORTED";
+      const isRetryable =
+        !err.response ||
+        err.response?.status >= 500 ||
+        err.code === "ECONNABORTED" ||
+        err.code === "ERR_NETWORK";
       if (!isRetryable) throw err;
       await new Promise(r => setTimeout(r, delay * (i + 1)));
     }
@@ -29,11 +37,14 @@ const withRetry = async (fn, retries = 2, delay = 800) => {
 };
 
 // ── Attach JWT on every request ───────────────────────────────────────────────
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("prepai_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-}, (err) => Promise.reject(err));
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("prepai_token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  },
+  (err) => Promise.reject(err)
+);
 
 // ── Global response error handler ─────────────────────────────────────────────
 api.interceptors.response.use(
@@ -58,5 +69,4 @@ api.interceptors.response.use(
   }
 );
 
-export { withRetry };
 export default api;

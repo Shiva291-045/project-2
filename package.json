@@ -48,5 +48,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "https://project-2-jso2.onrender.com"
+  "proxy": "http://localhost:5001"
 }
