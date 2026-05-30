@@ -96,7 +96,8 @@ const ScoreBar = ({ label, score, icon: Icon, color }) => (
 /* ─── Local fallback analysis (when backend is unreachable) ─────────────────── */
 const buildFallback = (text, name) => {
   const TECH = ["JavaScript","Python","Java","React","Node.js","SQL","Git","AWS","Docker","TypeScript","HTML","CSS","MongoDB","PostgreSQL","Linux","C++","Kubernetes","Redis","GraphQL","REST","Next.js","Vue","Angular","Django","FastAPI","Spring Boot","Golang","Rust","Swift","Kotlin"];
-  const skills = TECH.filter(s => new RegExp(s, "i").test(text)).slice(0, 12);
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const skills = TECH.filter(s => new RegExp(escapeRe(s), "i").test(text)).slice(0, 12);
   const hasMetrics = /\d+%|\$\d+|\d+ (users|team|projects|clients)/i.test(text);
   const hasActions = /achieved|led|built|developed|improved|managed|designed|deployed|launched/i.test(text);
   const hasContact = /email|phone|linkedin|github/i.test(text);

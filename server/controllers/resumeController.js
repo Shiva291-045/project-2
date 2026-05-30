@@ -129,7 +129,8 @@ ${text.slice(0, 4000)}`;
     "Next.js","Vue","Angular","Django","FastAPI","Spring Boot","Golang","Rust","Swift",
     "Kotlin","Flutter","TensorFlow","PyTorch","Spark","Hadoop","Kafka",
   ];
-  const foundSkills  = TECH_SKILLS.filter(s => new RegExp(s, "i").test(text));
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const foundSkills  = TECH_SKILLS.filter(s => new RegExp(escRe(s), "i").test(text));
   const hasMetrics   = /\d+%|\$\d+|\d+ (users|team|projects|clients|services)/i.test(text);
   const hasActions   = /achieved|led|built|developed|improved|managed|designed|deployed|launched|delivered/i.test(text);
   const hasContact   = /email|phone|linkedin|github/i.test(lower);
@@ -168,7 +169,7 @@ ${text.slice(0, 4000)}`;
     ],
     skills:          foundSkills.slice(0, 12),
     missingKeywords: ["CI/CD","Agile/Scrum","System Design","Microservices","DevOps","Cloud Architecture","REST APIs","Test-Driven Development"]
-      .filter(k => !new RegExp(k, "i").test(text)).slice(0, 6),
+      .filter(k => !new RegExp(escRe(k), "i").test(text)).slice(0, 6),
     suggestions: [
       "Start every bullet point with a strong action verb (Designed, Built, Led, Delivered)",
       "Tailor your resume keywords to match each specific job description",
