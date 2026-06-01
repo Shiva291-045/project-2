@@ -7,63 +7,99 @@ import {
   FileText, X, RefreshCw, Download, Eye, XCircle,
   Star, Code2, Briefcase, FolderOpen, Layout,
 } from "lucide-react";
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  PolarRadiusAxis, ResponsiveContainer,
+} from "recharts";
 import toast from "react-hot-toast";
 
-/* ─── VERY lenient client-side check ───────────────────────────────────────────
-   PURPOSE: Only block obvious non-documents (invoices, prescriptions).
-   Real resume validation happens on the server.
-   If text extraction fails (common with PDFs), we PASS it through anyway.
+/* ─── Client-side resume pre-check ─────────────────────────────────────────────
+   Catches obvious non-resume files BEFORE hitting the server.
+   The server does the authoritative check — this is just a fast early exit.
 ──────────────────────────────────────────────────────────────────────────────── */
-const HARD_REJECT = [
+const NON_RESUME_SIGNALS = [
   "tax invoice", "gst invoice", "total amount due", "unit price", "date of purchase",
-  "terms and conditions", "purchase order", "patient name", "doctor name",
-  "prescription date", "diagnosis", "table of contents", "bibliography",
+  "purchase order", "invoice number", "receipt number", "billing address",
+  "shipping address", "subtotal", "grand total", "payment received",
+  "patient name", "doctor name", "prescription date", "diagnosis", "medication",
+  "table of contents", "bibliography", "chapter ", "plaintiff", "defendant",
 ];
 
-const quickCheck = (text, fileName) => {
-  // If we couldn't extract text at all → pass to server (don't block)
-  if (!text || text.trim().length < 30) return { ok: true };
+const RESUME_SIGNALS = [
+  "experience", "education", "skills", "projects", "objective", "summary",
+  "certifications", "internship", "work history", "employment", "achievements",
+  "qualifications", "professional", "technologies", "responsibilities",
+];
+
+const quickValidate = (text) => {
+  if (!text || text.trim().length < 40) {
+    // Too short to validate — let server decide
+    return { valid: true };
+  }
 
   const lower = text.toLowerCase();
 
-  // Hard reject only if 4+ commercial/medical flags AND no resume words
-  const flags = HARD_REJECT.filter(f => lower.includes(f)).length;
-  const hasResumeWord = /resume|curriculum vitae|\bcv\b|experience|education|skills|projects/i.test(text);
+  // Count non-resume flags
+  const badHits = NON_RESUME_SIGNALS.filter(s => lower.includes(s)).length;
+  // Count resume signals
+  const goodHits = RESUME_SIGNALS.filter(s => lower.includes(s)).length;
 
-  if (flags >= 4 && !hasResumeWord) {
-    return { ok: false, reason: "This looks like an invoice, receipt, or non-resume document. Please upload your CV or resume." };
+  // Strong non-resume signals and no resume signals → reject
+  if (badHits >= 3 && goodHits === 0) {
+    const type = ["tax invoice","gst invoice","invoice number","billing"].some(s => lower.includes(s))
+      ? "invoice or financial document"
+      : ["patient","prescription","diagnosis","medication"].some(s => lower.includes(s))
+      ? "medical document"
+      : ["table of contents","bibliography","chapter"].some(s => lower.includes(s))
+      ? "academic or reference document"
+      : "non-resume document";
+    return {
+      valid: false,
+      reason: `This appears to be a ${type}, not a resume. Please upload your CV or resume file.`,
+    };
   }
 
-  // Everything else → let the server decide
-  return { ok: true };
+  // Long document with zero resume signals → likely wrong file
+  if (text.trim().length > 500 && goodHits === 0 && badHits === 0) {
+    // Check for at least one resume-like pattern
+    const hasName    = /[A-Z][a-z]+ [A-Z][a-z]+/.test(text); // "First Last"
+    const hasEmail   = /\b[\w.]+@[\w.]+\.[a-z]{2,}\b/i.test(text);
+    const hasYear    = /\b(19|20)\d{2}\b/.test(text);
+    if (!hasName && !hasEmail && !hasYear) {
+      return {
+        valid: false,
+        reason: "This file does not appear to be a resume. Could not find typical resume content like names, dates, or section headings.",
+      };
+    }
+  }
+
+  return { valid: true };
 };
 
-/* ─── Extract text from PDF (best-effort — failure is OK) ─────────────────── */
+/* ─── CSP-safe pdfjs text extraction ───────────────────────────────────────── */
 const extractPdfText = async (base64) => {
   try {
     const pdfjsLib = await import("pdfjs-dist/build/pdf");
-    // CSP-safe: disable the Web Worker entirely — pdfjs runs in the main thread.
-    // This avoids loading any external script (cdnjs, etc.) which would violate CSP.
     pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-    // Alternatively for pdfjs v4+:
-    // pdfjsLib.GlobalWorkerOptions.workerPort = null;
-    const pdf = await pdfjsLib.getDocument({ data: atob(base64), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+    const pdf = await pdfjsLib.getDocument({
+      data: atob(base64),
+      useWorkerFetch:   false,
+      isEvalSupported:  false,
+      useSystemFonts:   true,
+    }).promise;
     let text = "";
-    for (let i = 1; i <= Math.min(pdf.numPages, 6); i++) {
-      const page = await pdf.getPage(i);
+    for (let i = 1; i <= Math.min(pdf.numPages, 8); i++) {
+      const page    = await pdf.getPage(i);
       const content = await page.getTextContent();
       text += content.items.map(s => s.str).join(" ") + "\n";
     }
     return text.trim();
-  } catch (e) {
-    // Text extraction failed (scanned PDF, complex layout, etc.)
-    // Return empty string — server will handle it via the raw base64
+  } catch {
     return "";
   }
 };
 
-/* ─── UI sub-components ────────────────────────────────────────────────────── */
+/* ─── UI sub-components ─────────────────────────────────────────────────────── */
 const ATSRing = ({ score }) => {
   const r = 52, c = 2 * Math.PI * r;
   const color = score >= 80 ? "#22c55e" : score >= 60 ? "#eab308" : "#ef4444";
@@ -96,50 +132,34 @@ const ScoreBar = ({ label, score, icon: Icon, color }) => (
   </div>
 );
 
-/* ─── Local fallback analysis (when backend is unreachable) ─────────────────── */
-const buildFallback = (text, name) => {
-  const TECH = ["JavaScript","Python","Java","React","Node.js","SQL","Git","AWS","Docker","TypeScript","HTML","CSS","MongoDB","PostgreSQL","Linux","C++","Kubernetes","Redis","GraphQL","REST","Next.js","Vue","Angular","Django","FastAPI","Spring Boot","Golang","Rust","Swift","Kotlin"];
-  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const skills = TECH.filter(s => new RegExp(escapeRe(s), "i").test(text)).slice(0, 12);
-  const hasMetrics = /\d+%|\$\d+|\d+ (users|team|projects|clients)/i.test(text);
-  const hasActions = /achieved|led|built|developed|improved|managed|designed|deployed|launched/i.test(text);
-  const hasContact = /email|phone|linkedin|github/i.test(text);
-  const score = Math.min(88, 48 + skills.length * 2 + (hasMetrics ? 10 : 0) + (hasActions ? 8 : 0) + (hasContact ? 5 : 0));
-  return {
-    atsScore: score,
-    strengths: [
-      hasActions ? "Strong action verbs used throughout" : "Document structure is ATS-compatible",
-      skills.length > 3 ? `${skills.length} technical skills detected` : "Contact information present",
-      "Format is readable by ATS systems",
-      hasMetrics ? "Quantified achievements found" : "Document parsed successfully",
-    ],
-    improvements: [
-      !hasMetrics ? "Add quantified achievements (e.g. 'Reduced load time by 40%')" : "Add more data-driven results",
-      "Include keywords from the target job description",
-      "Add a professional summary at the top",
-      "Expand project descriptions with tech stack and impact",
-    ],
-    skills,
-    missingKeywords: ["CI/CD","Agile","System Design","DevOps","Microservices","Cloud Architecture"].filter(k => !text.includes(k)).slice(0, 5),
-    suggestions: [
-      "Start bullet points with strong action verbs (Designed, Built, Deployed)",
-      "Tailor your resume for each specific job description",
-      "Keep resume to 1–2 pages for best ATS performance",
-      "Add links to GitHub, LinkedIn, or portfolio",
-    ],
-    summary: `${name} analyzed. ${skills.length} technical skills detected. Connect backend AI for deeper analysis.`,
-    sections: {
-      skillsScore:     skills.length > 5 ? 80 : skills.length > 2 ? 60 : 40,
-      experienceScore: hasMetrics ? 85 : hasActions ? 65 : 45,
-      projectsScore:   /project/i.test(text) ? 70 : 30,
-      formatScore:     hasContact ? (text.length > 500 ? 80 : 65) : 50,
-    },
-    trendingSkills:  ["LLMs / AI Integration", "TypeScript", "Docker", "Kubernetes", "React Native"],
-    recommendedTech: ["Next.js", "FastAPI", "Terraform", "Redis", "GraphQL"],
-  };
-};
+/* ─── Invalid File Screen ───────────────────────────────────────────────────── */
+const InvalidFile = ({ reason, onReset }) => (
+  <div className="glass rounded-2xl border border-red-800/50 bg-red-900/10 p-8 text-center">
+    <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center mx-auto mb-5">
+      <XCircle className="w-8 h-8 text-red-400" />
+    </div>
+    <h3 className="text-xl font-bold text-red-300 mb-3">Not a Valid Resume</h3>
+    <p className="text-gray-400 text-sm leading-relaxed max-w-md mx-auto mb-6">{reason}</p>
+    <div className="glass rounded-xl border border-[rgba(155,93,229,0.1)] p-4 mb-6 text-left max-w-sm mx-auto">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Valid resume formats</p>
+      <ul className="space-y-1 text-xs text-gray-500">
+        <li className="flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> PDF with sections like Education, Skills, Experience</li>
+        <li className="flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> Word document (.doc / .docx) resume</li>
+        <li className="flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> Plain text (.txt) resume</li>
+        <li className="flex items-center gap-2"><XCircle className="w-3 h-3 text-red-500" /> Invoices, receipts, ID cards, medical records</li>
+        <li className="flex items-center gap-2"><XCircle className="w-3 h-3 text-red-500" /> Academic papers, presentations, certificates</li>
+      </ul>
+    </div>
+    <button
+      onClick={onReset}
+      className="flex items-center gap-2 mx-auto px-6 py-2.5 rounded-xl bg-brand-500/20 border border-brand-500/30 text-brand-300 hover:bg-brand-500/30 transition-all text-sm font-medium"
+    >
+      <RefreshCw className="w-4 h-4" /> Try a Different File
+    </button>
+  </div>
+);
 
-/* ─── Main Component ───────────────────────────────────────────────────────── */
+/* ─── Main Component ────────────────────────────────────────────────────────── */
 export const ResumeAnalyzer = () => {
   const [resume,      setResume]      = useState(null);
   const [analysis,    setAnalysis]    = useState(null);
@@ -148,23 +168,35 @@ export const ResumeAnalyzer = () => {
   const [dragActive,  setDragActive]  = useState(false);
   const [previewUrl,  setPreviewUrl]  = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [valError,    setValError]    = useState("");
+  const [invalidMsg,  setInvalidMsg]  = useState("");   // non-empty = show invalid screen
   const fileRef = useRef(null);
 
-  const handleDrag = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(e.type !== "dragleave"); };
-  const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); processFile(e.dataTransfer.files?.[0]); };
+  const handleDrag = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragActive(e.type !== "dragleave");
+  };
+  const handleDrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragActive(false);
+    processFile(e.dataTransfer.files?.[0]);
+  };
+
+  const reset = () => {
+    setResume(null); setAnalysis(null);
+    setPreviewUrl(null); setInvalidMsg("");
+  };
 
   const processFile = async (file) => {
     if (!file) return;
 
-    const ACCEPTED = [
+    // File type check
+    const OK_TYPES = [
       "application/pdf",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
     ];
-
-    if (!ACCEPTED.includes(file.type) && !file.name.match(/\.(pdf|doc|docx|txt)$/i)) {
+    if (!OK_TYPES.includes(file.type) && !file.name.match(/\.(pdf|doc|docx|txt)$/i)) {
       toast.error("Only PDF, DOC, DOCX, or TXT files accepted.");
       return;
     }
@@ -175,21 +207,18 @@ export const ResumeAnalyzer = () => {
 
     setLoading(true);
     setAnalysis(null);
-    setValError("");
-    setLoadingMsg("Reading your file…");
+    setInvalidMsg("");
+    setLoadingMsg("Reading file…");
 
     try {
-      const url    = URL.createObjectURL(file);
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload  = () => res(r.result.split(",")[1]);
         r.onerror = rej;
         r.readAsDataURL(file);
       });
-      setPreviewUrl(url);
-      setResume({ name: file.name, size: file.size, type: file.type });
 
-      // ── Step 1: Try to extract text (best-effort) ──────────────────────────
+      // Extract text for validation
       let extractedText = "";
       if (file.type === "application/pdf") {
         setLoadingMsg("Extracting text from PDF…");
@@ -197,17 +226,19 @@ export const ResumeAnalyzer = () => {
       } else if (file.type === "text/plain") {
         extractedText = await file.text();
       }
-      // For .doc/.docx — skip client extraction, server handles it
 
-      // ── Step 2: Very lenient client check ─────────────────────────────────
-      const check = quickCheck(extractedText, file.name);
-      if (!check.ok) {
-        setValError(check.reason);
+      // ── Client-side pre-check ──────────────────────────────────────────────
+      const preCheck = quickValidate(extractedText);
+      if (!preCheck.valid) {
+        setInvalidMsg(preCheck.reason);
         setLoading(false);
         return;
       }
 
-      // ── Step 3: Send to backend ────────────────────────────────────────────
+      setPreviewUrl(URL.createObjectURL(file));
+      setResume({ name: file.name, size: file.size, type: file.type });
+
+      // ── Send to backend ─────────────────────────────────────────────────────
       setLoadingMsg("AI is analyzing your resume…");
       try {
         const { data } = await api.post("/api/resume/analyze", {
@@ -217,25 +248,22 @@ export const ResumeAnalyzer = () => {
           mimeType: file.type,
         });
         setAnalysis(data.data);
-        toast.success("Resume analyzed successfully!");
-      } catch (backendErr) {
-        console.warn("Backend unavailable, using local analysis:", backendErr.message);
-        // If backend returns 422 (validation error), show a helpful message
-        if (backendErr.status === 422) {
-          // Backend rejected it — but we still give a local analysis
-          toast("Server couldn't parse the PDF. Showing local analysis instead.", { icon: "ℹ️" });
-          // Use filename + any extracted text for local analysis
-          const fallbackText = extractedText || file.name;
-          setAnalysis(buildFallback(fallbackText, file.name));
+        toast.success("Resume analyzed!");
+      } catch (err) {
+        if (err.status === 422) {
+          // Server confirmed it's NOT a resume → show invalid screen, no fake scores
+          setInvalidMsg(err.data?.message || "This file does not appear to be a resume.");
+          setResume(null);
+          setPreviewUrl(null);
         } else {
-          setAnalysis(buildFallback(extractedText || file.name, file.name));
-          toast("Backend not connected — showing local analysis.", { icon: "ℹ️" });
+          // Real backend error (500, network, etc.) → show error, do NOT show fake scores
+          toast.error("Analysis failed. Please try again or check your connection.");
+          setResume(null);
         }
       }
-
     } catch (err) {
       console.error("processFile error:", err);
-      toast.error("Failed to process file. Please try a different file.");
+      toast.error("Failed to read file. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -249,23 +277,24 @@ export const ResumeAnalyzer = () => {
       `ATS Score : ${analysis.atsScore}/100`,
       `File      : ${resume?.name}`,
       `Date      : ${new Date().toLocaleDateString()}`,
+      `Analysis  : ${analysis.source === "ai" ? "AI-powered (Anthropic Claude)" : "Keyword-based"}`,
       "",
       "STRENGTHS:",
       ...(analysis.strengths || []).map(s => `  • ${s}`),
       "",
-      "IMPROVEMENTS:",
+      "IMPROVEMENTS NEEDED:",
       ...(analysis.improvements || []).map(s => `  • ${s}`),
       "",
-      "SKILLS FOUND:",
-      `  ${(analysis.skills || []).join(", ")}`,
+      "DETECTED SKILLS:",
+      `  ${(analysis.skills || []).join(", ") || "None detected"}`,
       "",
       "MISSING KEYWORDS:",
-      `  ${(analysis.missingKeywords || []).join(", ")}`,
+      `  ${(analysis.missingKeywords || []).join(", ") || "None"}`,
       "",
       "SECTION SCORES:",
       ...(analysis.sections ? Object.entries(analysis.sections).map(([k, v]) => `  ${k}: ${v}%`) : []),
       "",
-      "RECOMMENDATIONS:",
+      "AI RECOMMENDATIONS:",
       ...(analysis.suggestions || []).map((s, i) => `  ${i + 1}. ${s}`),
       "",
       "SUMMARY:",
@@ -273,17 +302,9 @@ export const ResumeAnalyzer = () => {
     ];
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain" }));
-    a.download = "prepai-resume-report.txt";
+    a.download = `prepai-resume-${Date.now()}.txt`;
     a.click();
     toast.success("Report downloaded!");
-  };
-
-  const reset = () => {
-    setResume(null);
-    setAnalysis(null);
-    setPreviewUrl(null);
-    setValError("");
-    setLoadingMsg("Analyzing resume…");
   };
 
   const radarData = analysis?.sections ? [
@@ -304,30 +325,22 @@ export const ResumeAnalyzer = () => {
     <PageWrapper>
       <div className="mb-8">
         <h1 className="font-display text-3xl font-extrabold text-white mb-1">Resume Analyzer</h1>
-        <p className="text-gray-400 text-sm">AI-powered ATS scoring, skills gap analysis, and improvement suggestions</p>
+        <p className="text-gray-400 text-sm">Upload your CV — get ATS score, skill gaps, and AI improvement tips</p>
       </div>
 
-      {/* Validation error banner */}
-      {valError && (
-        <div className="mb-6 flex items-start gap-3 p-4 rounded-2xl bg-red-900/20 border border-red-800">
-          <XCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="font-semibold text-red-300 mb-1">File Not Accepted</p>
-            <p className="text-sm text-red-400">{valError}</p>
-            <button onClick={reset} className="mt-2 text-sm text-red-400 underline underline-offset-2 hover:text-red-300">
-              Try a different file
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ── Invalid file state ── */}
+      {invalidMsg && <InvalidFile reason={invalidMsg} onReset={reset} />}
 
-      {/* Upload zone */}
-      {!analysis && !loading && !valError && (
+      {/* ── Upload zone ── */}
+      {!analysis && !loading && !invalidMsg && (
         <div
           className={`glass rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
-            dragActive ? "border-neon-purple bg-brand-500/10 scale-[1.01]" : "border-[rgba(155,93,229,0.25)] hover:border-neon-purple/60 hover:bg-white/[0.02]"
+            dragActive
+              ? "border-neon-purple bg-brand-500/10 scale-[1.01]"
+              : "border-[rgba(155,93,229,0.25)] hover:border-neon-purple/60 hover:bg-white/[0.02]"
           }`}
-          onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
+          onDragEnter={handleDrag} onDragLeave={handleDrag}
+          onDragOver={handleDrag}  onDrop={handleDrop}
           onClick={() => fileRef.current?.click()}
         >
           <div className="py-20 text-center px-4">
@@ -335,9 +348,9 @@ export const ResumeAnalyzer = () => {
               <Upload className="w-9 h-9 text-neon-purple" />
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Upload Your Resume</h3>
-            <p className="text-gray-400 text-sm mb-1">Drag & drop, or click to browse</p>
+            <p className="text-gray-400 text-sm mb-1">Drag & drop or click to browse</p>
             <p className="text-xs text-gray-600">PDF · DOC · DOCX · TXT · Max 5 MB</p>
-            <p className="text-xs text-gray-700 mt-3">Works with all PDF types including multi-column, designed, and ATS-formatted resumes</p>
+            <p className="text-xs text-gray-700 mt-2">Only CV/resume files accepted · invoices and other documents will be rejected</p>
             <input
               ref={fileRef} type="file" accept=".pdf,.doc,.docx,.txt"
               onChange={e => processFile(e.target.files?.[0])}
@@ -347,26 +360,28 @@ export const ResumeAnalyzer = () => {
         </div>
       )}
 
-      {/* Loading */}
+      {/* ── Loading ── */}
       {loading && (
         <div className="py-20 text-center">
           <div className="flex flex-col items-center gap-5">
             <div className="relative w-16 h-16">
               <div className="absolute inset-0 rounded-full border-4 border-gray-700" />
               <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-neon-purple animate-spin" />
-              <div className="absolute inset-2 rounded-full border-4 border-transparent border-t-neon-cyan animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+              <div className="absolute inset-2 rounded-full border-4 border-transparent border-t-neon-cyan animate-spin"
+                style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
             </div>
             <div>
               <p className="text-lg font-semibold text-white">{loadingMsg}</p>
-              <p className="text-sm text-gray-500 mt-1">Extracting skills · Scoring ATS compatibility · Generating suggestions</p>
+              <p className="text-sm text-gray-500 mt-1">Validating document · Scoring ATS · Generating feedback</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Results */}
+      {/* ── Results ── */}
       {analysis && (
         <div className="space-y-6">
+
           {/* ATS Score hero */}
           <div className="glass rounded-2xl border border-[rgba(155,93,229,0.15)] p-6">
             <div className="flex flex-col md:flex-row items-center gap-8">
@@ -374,17 +389,27 @@ export const ResumeAnalyzer = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2 flex-wrap">
                   <h2 className="text-2xl font-bold text-white">
-                    {analysis.atsScore >= 80 ? "Excellent" : analysis.atsScore >= 65 ? "Good" : analysis.atsScore >= 50 ? "Fair" : "Needs Work"} Score
+                    {analysis.atsScore >= 80 ? "Excellent Resume"
+                      : analysis.atsScore >= 65 ? "Good Resume"
+                      : analysis.atsScore >= 50 ? "Average Resume"
+                      : "Needs Improvement"}
                   </h2>
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
                     analysis.atsScore >= 80 ? "bg-green-500/20 text-green-300"
-                    : analysis.atsScore >= 60 ? "bg-yellow-500/20 text-yellow-300"
-                    : "bg-red-500/20 text-red-300"
+                      : analysis.atsScore >= 60 ? "bg-yellow-500/20 text-yellow-300"
+                      : "bg-red-500/20 text-red-300"
                   }`}>
                     {analysis.atsScore}/100
                   </span>
+                  {analysis.source === "ai" && (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-neon-purple/20 text-neon-purple border border-neon-purple/30">
+                      AI Analysis
+                    </span>
+                  )}
                 </div>
-                {analysis.summary && <p className="text-gray-300 text-sm mb-3">{analysis.summary}</p>}
+                {analysis.summary && (
+                  <p className="text-gray-300 text-sm mb-3">{analysis.summary}</p>
+                )}
                 <p className="text-gray-500 text-sm flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   {resume?.name} · {(resume?.size / 1024).toFixed(0)} KB
@@ -412,7 +437,7 @@ export const ResumeAnalyzer = () => {
           {/* Preview */}
           {showPreview && previewUrl && (
             <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-surface-elevated border-b border-[rgba(155,93,229,0.1)]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(155,93,229,0.1)]">
                 <span className="font-medium text-white text-sm">Resume Preview</span>
                 <button onClick={() => setShowPreview(false)}><X className="w-5 h-5 text-gray-400 hover:text-white" /></button>
               </div>
@@ -420,12 +445,12 @@ export const ResumeAnalyzer = () => {
             </div>
           )}
 
-          {/* Section scores + radar */}
+          {/* Section breakdown + radar */}
           {SECTION_BARS.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                 <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
-                  <Star className="w-5 h-5 text-yellow-400" /> Section Breakdown
+                  <Star className="w-5 h-5 text-yellow-400" /> Section Scores
                 </h2>
                 <div className="space-y-4">
                   {SECTION_BARS.map(s => <ScoreBar key={s.label} {...s} />)}
@@ -462,7 +487,7 @@ export const ResumeAnalyzer = () => {
             </div>
             <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
               <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-orange-400" /> Improvements
+                <AlertTriangle className="w-5 h-5 text-orange-400" /> Needs Improvement
               </h2>
               <div className="space-y-2">
                 {(analysis.improvements || []).map((s, i) => (
@@ -479,7 +504,8 @@ export const ResumeAnalyzer = () => {
           {analysis.skills?.length > 0 && (
             <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
               <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-neon-purple" /> Detected Skills ({analysis.skills.length})
+                <TrendingUp className="w-5 h-5 text-neon-purple" />
+                Detected Skills ({analysis.skills.length})
               </h2>
               <div className="flex flex-wrap gap-2">
                 {analysis.skills.map((s, i) => <Badge key={i} variant="primary">{s}</Badge>)}
@@ -493,7 +519,7 @@ export const ResumeAnalyzer = () => {
               <h2 className="font-semibold text-white mb-2 flex items-center gap-2">
                 <Zap className="w-5 h-5 text-yellow-400" /> Missing Keywords
               </h2>
-              <p className="text-sm text-gray-500 mb-3">Add these to your resume to boost your ATS score:</p>
+              <p className="text-sm text-gray-500 mb-3">Add these to boost your ATS score:</p>
               <div className="flex flex-wrap gap-2">
                 {analysis.missingKeywords.map((k, i) => <Badge key={i} variant="warning">{k}</Badge>)}
               </div>
@@ -515,7 +541,7 @@ export const ResumeAnalyzer = () => {
             {analysis.recommendedTech?.length > 0 && (
               <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
                 <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <Code2 className="w-5 h-5 text-neon-blue" /> Recommended Tech
+                  <Code2 className="w-5 h-5 text-neon-blue" /> Recommended to Learn
                 </h2>
                 <div className="flex flex-wrap gap-2">
                   {analysis.recommendedTech.map((s, i) => <Badge key={i} variant="primary">{s}</Badge>)}
@@ -528,14 +554,12 @@ export const ResumeAnalyzer = () => {
           {analysis.suggestions?.length > 0 && (
             <div className="glass rounded-2xl border border-[rgba(155,93,229,0.1)] p-5">
               <h2 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <Star className="w-5 h-5 text-neon-purple" /> AI Improvement Suggestions
+                <Star className="w-5 h-5 text-neon-purple" /> AI Recommendations
               </h2>
               <div className="space-y-2">
                 {analysis.suggestions.map((s, i) => (
                   <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-blue-900/20 border border-blue-900/40">
-                    <div className="w-5 h-5 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
-                      {i + 1}
-                    </div>
+                    <div className="w-5 h-5 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</div>
                     <p className="text-sm text-gray-300">{s}</p>
                   </div>
                 ))}
@@ -543,11 +567,11 @@ export const ResumeAnalyzer = () => {
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Actions */}
           <div className="flex gap-3">
             <button
               onClick={downloadReport}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-neon-purple to-neon-blue hover:opacity-90 text-white font-semibold text-sm shadow-brand transition-all"
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-neon-purple to-neon-blue hover:opacity-90 text-white font-semibold text-sm transition-all"
             >
               <Download className="w-4 h-4" /> Download Report
             </button>
