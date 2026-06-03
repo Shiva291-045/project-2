@@ -83,18 +83,36 @@ const extractPdfText = async (base64) => {
     pdfjsLib.GlobalWorkerOptions.workerSrc = "";
     const pdf = await pdfjsLib.getDocument({
       data: atob(base64),
-      useWorkerFetch:   false,
-      isEvalSupported:  false,
-      useSystemFonts:   true,
+      useWorkerFetch:  false,
+      isEvalSupported: false,
+      useSystemFonts:  true,
     }).promise;
-    let text = "";
-    for (let i = 1; i <= Math.min(pdf.numPages, 8); i++) {
+
+    let allText = "";
+    const pageCount = Math.min(pdf.numPages, 10);
+
+    for (let i = 1; i <= pageCount; i++) {
       const page    = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map(s => s.str).join(" ") + "\n";
+      const content = await page.getTextContent({ normalizeWhitespace: true });
+
+      // Group items by vertical position to reconstruct lines
+      const lines = new Map();
+      for (const item of content.items) {
+        if (!item.str?.trim()) continue;
+        const y = Math.round(item.transform?.[5] || 0);
+        if (!lines.has(y)) lines.set(y, []);
+        lines.get(y).push(item.str);
+      }
+
+      // Sort lines top-to-bottom and join words
+      const sorted = [...lines.entries()].sort((a, b) => b[0] - a[0]);
+      const pageText = sorted.map(([, words]) => words.join(" ")).join("\n");
+      allText += pageText + "\n";
     }
-    return text.trim();
-  } catch {
+
+    return allText.trim();
+  } catch (err) {
+    console.warn("PDF text extraction failed:", err.message);
     return "";
   }
 };
@@ -401,18 +419,37 @@ export const ResumeAnalyzer = () => {
                   }`}>
                     {analysis.atsScore}/100
                   </span>
-                  {analysis.source === "ai" && (
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-neon-purple/20 text-neon-purple border border-neon-purple/30">
-                      AI Analysis
+                  {analysis.source === "ai" ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-neon-purple/20 text-neon-purple border border-neon-purple/30 font-medium">
+                      ✦ AI Analysis
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium" title="Set ANTHROPIC_API_KEY on the backend for AI-powered analysis">
+                      ⚡ Keyword Analysis
                     </span>
                   )}
                 </div>
+
+                {/* Extraction warning */}
+                {analysis.extractionWarning && (
+                  <div className="flex items-start gap-2 mb-3 p-2.5 rounded-lg bg-amber-900/20 border border-amber-800/40">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-300 leading-relaxed">
+                      Text extraction from this PDF was limited (possibly scanned or image-based).
+                      For best results, upload a text-based PDF or copy-paste your resume as a .txt file.
+                    </p>
+                  </div>
+                )}
+
                 {analysis.summary && (
                   <p className="text-gray-300 text-sm mb-3">{analysis.summary}</p>
                 )}
                 <p className="text-gray-500 text-sm flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   {resume?.name} · {(resume?.size / 1024).toFixed(0)} KB
+                  {analysis.analysisTime && (
+                    <span className="text-gray-700">· {(analysis.analysisTime / 1000).toFixed(1)}s</span>
+                  )}
                 </p>
               </div>
               <div className="flex flex-col gap-2">
