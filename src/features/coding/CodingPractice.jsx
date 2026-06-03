@@ -1,5 +1,15 @@
 import React, { useState, useMemo, useCallback, useRef } from "react";
-import Editor, { loader } from "@monaco-editor/react";
+/* ── CodeMirror 6 — 100% CSP-safe, zero eval() ──────────────────────────────
+   Monaco Editor internally calls eval() and cannot be made CSP-compliant.
+   CodeMirror 6 uses pure DOM manipulation — no eval, no blob workers, no CDN.
+──────────────────────────────────────────────────────────────────────────── */
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { python }     from "@codemirror/lang-python";
+import { java }       from "@codemirror/lang-java";
+import { cpp }        from "@codemirror/lang-cpp";
+import { oneDark }    from "@codemirror/theme-one-dark";
+import { EditorView } from "@codemirror/view";
 import { Badge, Button, Spinner } from "../../components/ui";
 import { PageWrapper } from "../../components/PageWrapper";
 import {
@@ -11,12 +21,22 @@ import toast from "react-hot-toast";
 import api from "../../services/apiClient";
 import rawData from "../../data/450DSA.json";
 
-/* ── Monaco CSP config ───────────────────────────────────────────────────────
-   By default @monaco-editor/react loads Monaco from a CDN which violates CSP.
-   Configuring loader to use the locally-bundled version (from node_modules)
-   keeps all scripts same-origin and avoids 'unsafe-eval' requirements.
-──────────────────────────────────────────────────────────────────────────── */
-loader.config({ monaco: undefined }); // use bundled monaco, not CDN
+/* ── CodeMirror language map ─────────────────────────────────────────────── */
+const CM_LANG = {
+  javascript: javascript({ jsx: false }),
+  python:     python(),
+  java:       java(),
+  cpp:        cpp(),
+  c:          cpp(),
+};
+
+/* ── CodeMirror light theme (simple token overrides) ────────────────────── */
+const cmLight = EditorView.theme({
+  "&": { backgroundColor: "#ffffff", color: "#1a1a1a" },
+  ".cm-gutters": { backgroundColor: "#f5f5f5", color: "#999", border: "none" },
+  ".cm-activeLine": { backgroundColor: "#f0f0f0" },
+  ".cm-selectionBackground": { backgroundColor: "#b3d4ff !important" },
+});
 
 /* ── CSP-safe JS execution via sandboxed iframe ──────────────────────────────
    No eval(), no new Function() — the iframe sandbox attribute prevents any
@@ -524,7 +544,7 @@ export const CodingPractice = () => {
 
         {/* Editor + output */}
         <div className="flex-1 overflow-hidden flex">
-          {/* Monaco */}
+          {/* CodeMirror 6 — CSP-safe editor */}
           <div className="flex-1 flex flex-col">
             <div className="flex items-center justify-between px-4 py-1.5 bg-gray-800 text-gray-400 text-xs">
               <span>Editor</span>
@@ -532,21 +552,31 @@ export const CodingPractice = () => {
                 <RotateCcw className="w-3 h-3" /> Reset
               </button>
             </div>
-            <div className="flex-1">
-              <Editor height="100%" language={language} value={code} onChange={(v) => setCode(v || "")} theme={editorTheme}
-                beforeMount={(monaco) => {
-                  // CSP-safe: disable Monaco's web worker environment
-                  // Workers use blob: URLs which require 'unsafe-eval' in CSP
-                  window.MonacoEnvironment = {
-                    getWorker: () => {
-                      // Return a dummy worker that does nothing — syntax highlighting
-                      // still works via the main-thread fallback mode
-                      const blob = new Blob(["self.onmessage=function(){}"], { type: "application/javascript" });
-                      return new Worker(URL.createObjectURL(blob));
-                    },
-                  };
+            {/* CodeMirror 6 — CSP-safe, no eval(), no CDN, no blob workers */}
+            <div className="flex-1 overflow-auto" style={{ minHeight: 0 }}>
+              <CodeMirror
+                value={code}
+                height="100%"
+                theme={editorTheme === "vs-dark" ? oneDark : cmLight}
+                extensions={[CM_LANG[language] || javascript()]}
+                onChange={(val) => setCode(val)}
+                basicSetup={{
+                  lineNumbers:       true,
+                  highlightActiveLineGutter: true,
+                  foldGutter:        false,
+                  dropCursor:        false,
+                  allowMultipleSelections: false,
+                  indentOnInput:     true,
+                  syntaxHighlighting: true,
+                  autocompletion:    false, // autocomplete uses heuristics, not eval
+                  closeBrackets:     true,
+                  rectangularSelection: false,
+                  crosshairCursor:   false,
+                  highlightActiveLine: true,
+                  highlightSelectionMatches: false,
                 }}
-                options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: "on", scrollBeyondLastLine: false, automaticLayout: true }} />
+                style={{ fontSize: "14px", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", height: "100%" }}
+              />
             </div>
           </div>
 

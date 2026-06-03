@@ -3,7 +3,6 @@
   "version": "2.0.0",
   "private": true,
   "dependencies": {
-    "@monaco-editor/react": "^4.6.0",
     "axios": "^1.6.7",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
@@ -18,7 +17,17 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.22.0",
     "react-scripts": "5.0.1",
-    "recharts": "^2.10.4"
+    "recharts": "^2.10.4",
+    "@codemirror/commands": "^6.3.3",
+    "@codemirror/lang-cpp": "^6.0.2",
+    "@codemirror/lang-java": "^6.0.1",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/language": "^6.10.1",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.26.3",
+    "@uiw/react-codemirror": "^4.21.25"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
