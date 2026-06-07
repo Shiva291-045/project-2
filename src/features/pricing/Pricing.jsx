@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Container, Button, Badge } from "../../components/ui";
@@ -30,8 +30,8 @@ const PREMIUM_FEATURES = [
   "Early access to new features",
 ];
 
-/* ── Modal shown when Razorpay key is not configured ── */
-const SetupModal = ({ onClose, billing, price }) => (
+/* ── Setup modal (shown when RAZORPAY_KEY_ID is missing) ─────────────────── */
+const SetupModal = ({ onClose }) => (
   <motion.div
     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
     className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -43,7 +43,6 @@ const SetupModal = ({ onClose, billing, price }) => (
       onClick={e => e.stopPropagation()}
       className="glass-strong rounded-3xl border border-[rgba(155,93,229,0.3)] p-8 max-w-md w-full shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
     >
-      {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
@@ -59,7 +58,6 @@ const SetupModal = ({ onClose, billing, price }) => (
         </button>
       </div>
 
-      {/* Info */}
       <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-400/20">
         <div className="flex gap-3">
           <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
@@ -67,13 +65,12 @@ const SetupModal = ({ onClose, billing, price }) => (
             <p className="text-sm font-semibold text-amber-300 mb-1">Razorpay Key Not Configured</p>
             <p className="text-xs text-gray-400 leading-relaxed">
               The <code className="text-amber-300 bg-black/30 px-1 rounded">REACT_APP_RAZORPAY_KEY_ID</code> environment
-              variable is not set in your Vercel deployment. Follow the steps below to enable live payments.
+              variable is not set. Follow the steps below to enable live payments.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Steps */}
       <div className="space-y-3 mb-6">
         {[
           { step: "1", title: "Create Razorpay Account", desc: "Sign up free at razorpay.com → Settings → API Keys", link: "https://razorpay.com" },
@@ -90,7 +87,7 @@ const SetupModal = ({ onClose, billing, price }) => (
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-white">{title}</p>
                 {link && (
-                  <a href={link} target="_blank" rel="noopener noreferrer" className="text-neon-purple hover:text-brand-300 transition-colors">
+                  <a href={link} target="_blank" rel="noopener noreferrer" className="text-neon-purple hover:text-brand-300">
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
@@ -101,18 +98,14 @@ const SetupModal = ({ onClose, billing, price }) => (
         ))}
       </div>
 
-      {/* Also need server key */}
       <div className="p-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.1)] mb-5 text-xs text-gray-400">
         <p className="font-semibold text-gray-300 mb-1">Also add to Render (backend):</p>
         <code className="text-neon-cyan">RAZORPAY_KEY_ID</code> and <code className="text-neon-cyan">RAZORPAY_KEY_SECRET</code>
-        <span className="ml-1">in your Render service environment variables.</span>
       </div>
 
       <div className="flex gap-3">
         <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer" className="flex-1">
-          <Button variant="primary" className="w-full">
-            <ExternalLink className="w-4 h-4" /> Open Razorpay
-          </Button>
+          <Button variant="primary" className="w-full"><ExternalLink className="w-4 h-4" /> Open Razorpay</Button>
         </a>
         <Button variant="secondary" onClick={onClose}>Close</Button>
       </div>
@@ -120,102 +113,215 @@ const SetupModal = ({ onClose, billing, price }) => (
   </motion.div>
 );
 
+/* ── Load Razorpay checkout.js (idempotent) ─────────────────────────────────── */
+const loadRazorpayScript = () =>
+  new Promise((resolve) => {
+    // Already loaded
+    if (window.Razorpay) {
+      console.log("[Razorpay] checkout.js already loaded ✅");
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => {
+      console.log("[Razorpay] checkout.js loaded successfully ✅");
+      resolve(true);
+    };
+    script.onerror = (e) => {
+      console.error("[Razorpay] checkout.js failed to load ❌", e);
+      resolve(false);
+    };
+    document.body.appendChild(script);
+  });
+
+/* ─── Main Pricing Component ────────────────────────────────────────────────── */
 export const Pricing = () => {
   const { user, userProfile } = useAuth();
-  const navigate = useNavigate();
-  const [billing,    setBilling]    = useState("monthly");
-  const [loading,    setLoading]    = useState(false);
-  const [showSetup,  setShowSetup]  = useState(false);
-  const isPremium = userProfile?.isPremium || false;
+  const navigate  = useNavigate();
+  const [billing,   setBilling]   = useState("monthly");
+  const [loading,   setLoading]   = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
-  const monthlyPrice = 499;
-  const yearlyPrice  = Math.round(monthlyPrice * 12 * 0.6);
-  const displayPrice = billing === "monthly" ? monthlyPrice : Math.round(yearlyPrice / 12);
+  // Track whether a payment actually succeeded — prevents ondismiss
+  // from showing "dismissed" when it fires after handler() on success
+  const paymentSucceeded = useRef(false);
+  const paymentFailed    = useRef(false);
 
-  const loadRazorpay = () =>
-    new Promise(resolve => {
-      if (window.Razorpay) { resolve(true); return; }
-      const s = document.createElement("script");
-      s.src = "https://checkout.razorpay.com/v1/checkout.js";
-      s.onload  = () => resolve(true);
-      s.onerror = () => resolve(false);
-      document.body.appendChild(s);
-    });
+  const isPremium     = userProfile?.isPremium || false;
+  const monthlyPrice  = 499;
+  const yearlyPrice   = Math.round(monthlyPrice * 12 * 0.6);
+  const displayPrice  = billing === "monthly" ? monthlyPrice : Math.round(yearlyPrice / 12);
 
   const handlePurchase = async () => {
     if (!user) { navigate("/register"); return; }
 
     const keyId = process.env.REACT_APP_RAZORPAY_KEY_ID;
+    console.log("[Razorpay] Key ID present:", !!keyId, "| Value starts with:", keyId?.slice(0, 7));
 
-    // Show setup guide if key not configured
-    if (!keyId || keyId === "rzp_test_placeholder" || keyId === "rzp_test_XXXXXXXXXXXX") {
+    // Key not configured → show setup guide
+    const isPlaceholder = !keyId
+      || keyId === "rzp_test_placeholder"
+      || keyId === "rzp_test_XXXXXXXXXXXX"
+      || keyId === "rzp_live_XXXXXXXXXXXX"
+      || keyId.length < 15;
+
+    if (isPlaceholder) {
+      console.warn("[Razorpay] REACT_APP_RAZORPAY_KEY_ID is not configured — showing setup guide");
       setShowSetup(true);
       return;
     }
 
     setLoading(true);
+    paymentSucceeded.current = false;
+    paymentFailed.current    = false;
+
     try {
-      const ok = await loadRazorpay();
-      if (!ok) {
-        toast.error("Payment gateway failed to load. Please check your internet connection.");
+      // ── Step 1: Load checkout.js ────────────────────────────────────────────
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        toast.error("Razorpay checkout failed to load. Check your internet connection or CSP settings.");
         setLoading(false);
         return;
       }
 
-      // Create backend order
+      // ── Step 2: Create backend order ────────────────────────────────────────
+      const amountInPaise = billing === "monthly" ? monthlyPrice * 100 : yearlyPrice * 100;
       let orderId = null;
+
       try {
+        console.log("[Razorpay] Creating order — plan:", billing, "amount (paise):", amountInPaise);
         const orderRes = await api.post("/api/payment/create-order", {
           plan: billing,
-          amount: billing === "monthly" ? monthlyPrice * 100 : yearlyPrice * 100,
+          amount: amountInPaise,
         });
         orderId = orderRes.data?.data?.orderId;
-      } catch (e) {
-        console.warn("Order creation failed, proceeding without order_id:", e?.message);
+        console.log("[Razorpay] Order created ✅ — order_id:", orderId);
+      } catch (orderErr) {
+        console.error("[Razorpay] Order creation failed ❌:", orderErr?.message, orderErr?.data);
+        // Don't abort — Razorpay can work without an order_id in test mode
+        // but log clearly so it's obvious in production
+        if (orderErr?.status >= 500) {
+          toast.error("Could not create payment order. Please try again.");
+          setLoading(false);
+          return;
+        }
       }
 
+      // Warn if orderId looks like our fallback mock (not a real Razorpay order)
+      const isRealOrder = orderId && orderId.startsWith("order_") && !orderId.includes("_undefined");
+      if (!isRealOrder) {
+        console.warn("[Razorpay] ⚠️  No real Razorpay order_id — running without order_id. Signature verification will be skipped.");
+      }
+
+      // ── Step 3: Build Razorpay options ──────────────────────────────────────
       const opts = {
         key:      keyId,
-        amount:   (billing === "monthly" ? monthlyPrice : yearlyPrice) * 100,
+        amount:   amountInPaise,
         currency: "INR",
-        name:     "PrepAI Premium",
+        name:     "PrepAI",
         description: `PrepAI Premium — ${billing === "monthly" ? "Monthly" : "Yearly"} Plan`,
-        image:    window.location.origin + "/logo.png",
-        ...(orderId ? { order_id: orderId } : {}),
+        image:    `${window.location.origin}/logo.png`,
+        // Only pass order_id if it's a real Razorpay order (starts with "order_" and is short)
+        ...(isRealOrder ? { order_id: orderId } : {}),
         prefill: {
           name:  userProfile?.name || user?.displayName || "",
           email: user?.email || "",
+          contact: userProfile?.phone || "",
+        },
+        notes: {
+          userId: user.uid || "",
+          plan:   billing,
         },
         theme: { color: "#7b2ff7" },
         modal: {
           backdropclose: false,
-          ondismiss: () => setLoading(false),
+          escape:        false,
+          // ── ondismiss fires when the modal closes for ANY reason:
+          //    1. User clicks ✕ (genuine dismissal)
+          //    2. After handler() callback runs on success
+          //    3. After payment.failed event
+          // We use refs to know which case we're in.
+          ondismiss: () => {
+            console.log("[Razorpay] Modal dismissed — succeeded:", paymentSucceeded.current, "| failed:", paymentFailed.current);
+            if (!paymentSucceeded.current && !paymentFailed.current) {
+              // User closed the modal without paying — NOT an error
+              console.log("[Razorpay] User dismissed checkout without payment");
+              toast("Checkout closed. No payment was made.", { icon: "ℹ️" });
+            }
+            setLoading(false);
+          },
         },
+
+        // ── handler: called on successful payment ──────────────────────────
         handler: async (response) => {
+          console.log("[Razorpay] Payment success callback ✅:", {
+            payment_id: response.razorpay_payment_id,
+            order_id:   response.razorpay_order_id,
+            signature:  response.razorpay_signature ? "present" : "missing",
+          });
+
+          // Mark succeeded BEFORE await so ondismiss doesn't misclassify
+          paymentSucceeded.current = true;
+
           try {
+            console.log("[Razorpay] Verifying payment with backend...");
             await api.post("/api/payment/verify", {
               razorpay_order_id:   response.razorpay_order_id   || "",
               razorpay_payment_id: response.razorpay_payment_id || "",
               razorpay_signature:  response.razorpay_signature  || "",
               plan: billing,
             });
+            console.log("[Razorpay] Verification success ✅ — user upgraded to Premium");
             toast.success("🎉 Welcome to PrepAI Premium! Enjoy unlimited access.");
             setTimeout(() => navigate("/dashboard"), 1500);
-          } catch (e) {
-            toast.error("Payment verification failed. Please contact support with your payment ID.");
+          } catch (verifyErr) {
+            console.error("[Razorpay] Verification failed ❌:", verifyErr?.message, verifyErr?.data);
+            toast.error(
+              `Payment received (ID: ${response.razorpay_payment_id}) but verification failed. ` +
+              "Please contact support — your payment is safe."
+            );
           }
           setLoading(false);
         },
       };
 
-      const rzp = new window.Razorpay(opts);
-      rzp.on("payment.failed", (resp) => {
-        toast.error(`Payment failed: ${resp?.error?.description || "Please try again."}`);
-        setLoading(false);
+      console.log("[Razorpay] Initializing checkout with options:", {
+        key:      opts.key?.slice(0, 12) + "...",
+        amount:   opts.amount,
+        currency: opts.currency,
+        order_id: opts.order_id || "(none — test mode)",
+        prefill_email: opts.prefill?.email,
       });
+
+      // ── Step 4: Open Razorpay checkout ─────────────────────────────────────
+      const rzp = new window.Razorpay(opts);
+
+      // payment.failed fires on card decline, OTP failure, etc.
+      // This is DIFFERENT from ondismiss — it's an actual payment error.
+      rzp.on("payment.failed", (failResp) => {
+        paymentFailed.current = true;
+        const errCode = failResp?.error?.code || "UNKNOWN";
+        const errDesc = failResp?.error?.description || "Please try again.";
+        const errReason = failResp?.error?.reason || "";
+        console.error("[Razorpay] Payment failed ❌:", {
+          code:        errCode,
+          description: errDesc,
+          reason:      errReason,
+          source:      failResp?.error?.source,
+          step:        failResp?.error?.step,
+          metadata:    failResp?.error?.metadata,
+        });
+        toast.error(`Payment failed: ${errDesc}`);
+        // Don't setLoading(false) here — ondismiss will fire after this and do it
+      });
+
       rzp.open();
+      console.log("[Razorpay] Checkout opened ✅");
+
     } catch (err) {
-      console.error(err);
+      console.error("[Razorpay] Unexpected error ❌:", err);
       toast.error("Something went wrong. Please try again.");
       setLoading(false);
     }
@@ -226,15 +332,8 @@ export const Pricing = () => {
       <div className="absolute inset-0 grid-bg opacity-40" />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-brand-500/8 blur-3xl" />
 
-      {/* Setup modal */}
       <AnimatePresence>
-        {showSetup && (
-          <SetupModal
-            onClose={() => setShowSetup(false)}
-            billing={billing}
-            price={displayPrice}
-          />
-        )}
+        {showSetup && <SetupModal onClose={() => setShowSetup(false)} />}
       </AnimatePresence>
 
       {/* Nav */}
@@ -318,7 +417,6 @@ export const Pricing = () => {
               style={{ background:"linear-gradient(135deg,rgba(123,47,247,0.6),rgba(78,168,222,0.4))" }}
             >
               <div className="glass-strong rounded-3xl p-8 h-full relative">
-                {/* Popular tag */}
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-brand-500 to-neon-blue text-white text-xs font-bold shadow-brand">
                   <Sparkles className="w-3.5 h-3.5" /> Most Popular
                 </div>
@@ -369,7 +467,7 @@ export const Pricing = () => {
                   <Button variant="primary" size="lg" className="w-full shadow-brand-lg"
                     onClick={handlePurchase} disabled={loading}>
                     {loading
-                      ? "Opening payment..."
+                      ? <><span className="animate-pulse">●</span> Opening payment...</>
                       : <><Crown className="w-5 h-5" /> {user ? `Upgrade — ₹${displayPrice}/mo` : "Get Premium"}</>
                     }
                   </Button>

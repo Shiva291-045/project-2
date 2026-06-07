@@ -10,11 +10,12 @@ const router = express.Router();
 router.post("/create-order", protect, async (req, res) => {
   try {
     const { plan = "monthly", amount } = req.body;
-    const amountInPaise = amount || (plan === "yearly" ? 359400 : 49900); // ₹499 or ₹3594
+    const amountInPaise = amount || (plan === "yearly" ? 359400 : 49900);
 
-    // If Razorpay is configured, create a real order
     const keyId     = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    console.log(`[Payment] create-order — plan: ${plan}, amount: ${amountInPaise} paise, keyId: ${keyId ? keyId.slice(0,12)+"..." : "NOT SET"}`);
 
     if (keyId && keySecret) {
       try {
@@ -23,26 +24,34 @@ router.post("/create-order", protect, async (req, res) => {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Basic ${authHeader}` },
           body: JSON.stringify({
-            amount: amountInPaise,
+            amount:   amountInPaise,
             currency: "INR",
-            receipt: `prepai_${req.user._id}_${Date.now()}`,
-            notes: { userId: String(req.user._id), plan },
+            receipt:  `prepai_${req.user._id}_${Date.now()}`,
+            notes:    { userId: String(req.user._id), plan },
           }),
         });
+
         if (orderRes.ok) {
           const order = await orderRes.json();
-          return resp.success(res, { orderId: order.id, amount: amountInPaise, currency: "INR" });
+          console.log(`[Payment] ✅ Razorpay order created: ${order.id}`);
+          return resp.success(res, { orderId: order.id, amount: amountInPaise, currency: "INR", real: true });
         }
+
+        const errBody = await orderRes.text();
+        console.error(`[Payment] ❌ Razorpay order API error ${orderRes.status}:`, errBody);
       } catch (e) {
-        console.error("Razorpay order create error:", e.message);
+        console.error("[Payment] ❌ Razorpay order fetch failed:", e.message);
       }
+    } else {
+      console.warn("[Payment] ⚠️  RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set — returning null orderId");
     }
 
-    // Fallback — return a mock order ID (frontend still works, just no server verification)
-    const mockOrderId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    return resp.success(res, { orderId: mockOrderId, amount: amountInPaise, currency: "INR" });
+    // Return null orderId — frontend handles this gracefully (test/demo mode)
+    console.log("[Payment] Returning null orderId — no real Razorpay order created");
+    return resp.success(res, { orderId: null, amount: amountInPaise, currency: "INR", real: false });
+
   } catch (err) {
-    console.error(err);
+    console.error("[Payment] create-order unhandled error:", err.message);
     return resp.error(res, "Failed to create payment order.", 500);
   }
 });
