@@ -32,7 +32,10 @@ const getClient = () => {
   return new GoogleGenerativeAI(key);
 };
 
-/* ─── Call Gemini with timeout + retry ─────────────────────────────────────── */
+/* ─── Call Gemini with timeout + retry (exported for other controllers) ────── */
+export const callGeminiRaw = async (prompt, opts = {}) => callGemini(prompt, opts);
+
+/* ─── Internal Gemini caller ───────────────────────────────────────────────── */
 const callGemini = async (prompt, opts = {}) => {
   const { retries = 2, timeoutMs = 40000 } = opts;
   let lastErr;

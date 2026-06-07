@@ -20,7 +20,7 @@ let paymentRoutes;
 try {
   const mod = await import("./routes/paymentRoutes.js");
   paymentRoutes = mod.default;
-} catch (e) {
+} catch {
   console.warn("⚠️  paymentRoutes not found — skipping");
 }
 
@@ -36,45 +36,50 @@ const PORT = process.env.PORT || 5001;
 // ── Connect DB ────────────────────────────────────────────────────────────────
 connectDB();
 
-// ── Validate API keys at startup ──────────────────────────────────────────────
+// ── Validate Gemini key at startup ────────────────────────────────────────────
 validateGeminiKey();
 
-// ── Security ──────────────────────────────────────────────────────────────────
+// ── Security (Helmet + CSP) ───────────────────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: false,
   crossOriginOpenerPolicy:   false,
   contentSecurityPolicy: {
     directives: {
-      defaultSrc:  ["'self'"],
-      scriptSrc:   ["'self'"],                             // no unsafe-eval
-      styleSrc:    ["'self'", "'unsafe-inline'"],          // UI libs need inline styles
-      imgSrc:      ["'self'", "data:", "blob:", "https:"],
-      fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "blob:", "https:"],
+      fontSrc:    ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: [
         "'self'",
-        "https://api.anthropic.com",
+        // Gemini AI
+        "https://generativelanguage.googleapis.com",
+        // Judge0 (coding runner)
         "https://judge0-ce.p.rapidapi.com",
-        "https://*.onrender.com",
-        "https://*.vercel.app",
+        // Payments
         "https://api.razorpay.com",
+        // Firebase / Firestore
         "https://firestore.googleapis.com",
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
         "https://*.firebase.com",
         "https://*.firebaseio.com",
+        // Deployment
+        "https://*.onrender.com",
+        "https://*.vercel.app",
         ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
       ],
-      frameSrc:    ["'self'"],     // sandboxed iframe JS runner
-      workerSrc:   ["'self'", "blob:"], // Monaco/pdfjs blob workers
-      childSrc:    ["'self'", "blob:"],
-      objectSrc:   ["'none'"],
-      baseUri:     ["'self'"],
-      formAction:  ["'self'"],
+      frameSrc:   ["'self'"],
+      workerSrc:  ["'self'", "blob:"],
+      childSrc:   ["'self'", "blob:"],
+      objectSrc:  ["'none'"],
+      baseUri:    ["'self'"],
+      formAction: ["'self'"],
     },
   },
 }));
 
-// ── CORS — accept Vercel, Render, Netlify, localhost ─────────────────────────
+// ── CORS ──────────────────────────────────────────────────────────────────────
 const buildAllowedOrigins = () => {
   const patterns = [
     /\.vercel\.app$/,
@@ -100,9 +105,9 @@ const corsOptions = {
     console.warn("CORS blocked:", origin);
     callback(new Error("Not allowed by CORS"));
   },
-  credentials: true,
-  methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization","X-Requested-With"],
+  credentials:    true,
+  methods:        ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 
 app.use(cors(corsOptions));
@@ -129,34 +134,42 @@ if (paymentRoutes) app.use("/api/payment", paymentRoutes);
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
   res.json({
-    status: "ok",
+    status:    "ok",
     timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV || "development",
-    ai: process.env.ANTHROPIC_API_KEY ? "configured" : "not configured",
-    db: process.env.MONGODB_URI ? "configured" : "default",
+    env:       process.env.NODE_ENV || "development",
+    gemini:    process.env.GEMINI_API_KEY ? "configured" : "not configured",
+    db:        process.env.MONGODB_URI   ? "configured" : "default",
   });
 });
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found.` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.path} not found.`,
+  });
 });
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
-  if (err.message === "Not allowed by CORS") return res.status(403).json({ success: false, message: "CORS error" });
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({ success: false, message: "CORS error" });
+  }
   console.error("Unhandled error:", err.message);
   res.status(err.status || 500).json({
     success: false,
-    message: process.env.NODE_ENV === "production" ? "Something went wrong." : err.message,
+    message: process.env.NODE_ENV === "production"
+      ? "Something went wrong."
+      : err.message,
   });
 });
 
+// ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n🚀 PrepAI API running on port ${PORT}`);
   console.log(`📦 Environment : ${process.env.NODE_ENV || "development"}`);
-  console.log(`🗄️  MongoDB URI  : ${process.env.MONGODB_URI ? "configured" : "fallback"}`);
-  console.log(`🤖 AI (Anthropic): ${process.env.ANTHROPIC_API_KEY ? "configured" : "❌ NOT SET"}\n`);
+  console.log(`🗄️  MongoDB     : ${process.env.MONGODB_URI   ? "configured" : "fallback"}`);
+  console.log(`🤖 Gemini AI   : ${process.env.GEMINI_API_KEY ? "configured ✅" : "❌ NOT SET — set GEMINI_API_KEY in Render"}\n`);
 });
 
 export default app;
