@@ -42,30 +42,52 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'"],
-      styleSrc:   ["'self'", "'unsafe-inline'"],
-      imgSrc:     ["'self'", "data:", "blob:", "https:"],
-      fontSrc:    ["'self'", "data:", "https://fonts.gstatic.com"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "https://checkout.razorpay.com", // Razorpay checkout script
+        "https://api.razorpay.com",
+      ],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "https://fonts.googleapis.com",
+        "https://checkout.razorpay.com", // Razorpay injects styles
+      ],
+      imgSrc:  ["'self'", "data:", "blob:", "https:", "https://*.razorpay.com"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: [
         "'self'",
-        "https://api.groq.com",              // Groq AI
-        "https://judge0-ce.p.rapidapi.com",  // Code runner
-        "https://api.razorpay.com",          // Payments
+        "https://api.groq.com",
+        "https://judge0-ce.p.rapidapi.com",
+        // Razorpay — checkout + analytics
+        "https://api.razorpay.com",
+        "https://lumberjack.razorpay.com",
+        "https://lumberjack-dx.razorpay.com",
+        // Firebase
         "https://firestore.googleapis.com",
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
         "https://*.firebase.com",
         "https://*.firebaseio.com",
+        // Deployment
         "https://*.onrender.com",
         "https://*.vercel.app",
         ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
       ],
-      frameSrc:   ["'self'"],
-      workerSrc:  ["'self'", "blob:"],
-      childSrc:   ["'self'", "blob:"],
-      objectSrc:  ["'none'"],
-      baseUri:    ["'self'"],
-      formAction: ["'self'"],
+      // Razorpay opens an iframe for the payment modal
+      frameSrc: [
+        "'self'",
+        "https://api.razorpay.com",
+        "https://checkout.razorpay.com",
+        "https://*.razorpay.com",
+      ],
+      workerSrc: ["'self'", "blob:"],
+      childSrc:  ["'self'", "blob:", "https://*.razorpay.com"],
+      objectSrc: ["'none'"],
+      baseUri:   ["'self'"],
+      // Razorpay form submits to their checkout domain
+      formAction: ["'self'", "https://checkout.razorpay.com"],
     },
   },
 }));
