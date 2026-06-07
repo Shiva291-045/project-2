@@ -8,7 +8,7 @@
   [![Vercel](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://vercel.com)
   [![Render](https://img.shields.io/badge/Backend-Render-46E3B7?logo=render)](https://render.com)
   [![MongoDB](https://img.shields.io/badge/DB-MongoDB-green?logo=mongodb)](https://mongodb.com)
-  [![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-blue?logo=google)](https://aistudio.google.com)
+  [![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-blue?logo=google)](https://console.groq.com)
 </div>
 
 ---
@@ -30,7 +30,7 @@
 |-------|------|
 | Frontend | React 18, Tailwind CSS, Framer Motion |
 | Backend | Node.js, Express, MongoDB |
-| AI | Google Gemini 1.5 Flash |
+| AI | Groq (llama-3.3-70b-versatile) |
 | Auth | Firebase + JWT |
 | Payments | Razorpay |
 | Deploy | Vercel (FE) + Render (BE) |
@@ -41,7 +41,7 @@
 ```bash
 cd server
 cp .env.example .env
-# Fill in MONGODB_URI, GEMINI_API_KEY, JWT_SECRET
+# Fill in MONGODB_URI, GROQ_API_KEY, JWT_SECRET
 npm install
 npm run dev
 ```
@@ -62,7 +62,7 @@ npm start
 NODE_ENV=production
 MONGODB_URI=mongodb+srv://...
 JWT_SECRET=your_secure_secret_min_32_chars
-GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=gsk_xxxxxxxxxxxx
 FRONTEND_URL=https://your-app.vercel.app
 RAZORPAY_KEY_ID=rzp_live_...
 RAZORPAY_KEY_SECRET=...
