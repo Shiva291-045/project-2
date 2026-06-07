@@ -19,9 +19,12 @@ export const validateGeminiKey = () => {
     console.error("❌ [Gemini] GEMINI_API_KEY appears invalid (too short)");
     return { valid: false, reason: "invalid_format" };
   }
-  console.log("✅ [Gemini] GEMINI_API_KEY configured — AI resume analysis enabled");
+  console.log("✅ [Gemini] GEMINI_API_KEY configured — model: gemini-2.0-flash");
   return { valid: true };
 };
+
+/* ─── Supported model — works on both v1 and v1beta endpoints ──────────────── */
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 /* ─── Get Gemini client (throws if key missing) ────────────────────────────── */
 const getClient = () => {
@@ -43,7 +46,7 @@ const callGemini = async (prompt, opts = {}) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const genAI = getClient();
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
       const raceResult = await Promise.race([
         model.generateContent(prompt),
