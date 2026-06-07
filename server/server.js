@@ -6,7 +6,7 @@ import morgan     from "morgan";
 import path       from "path";
 import { fileURLToPath } from "url";
 import connectDB  from "./config/db.js";
-import { validateApiKey } from "./services/resumeAnalysisService.js";
+import { validateGeminiKey } from "./services/geminiResumeService.js";
 
 import authRoutes        from "./routes/authRoutes.js";
 import resumeRoutes      from "./routes/resumeRoutes.js";
@@ -37,7 +37,7 @@ const PORT = process.env.PORT || 5001;
 connectDB();
 
 // ── Validate API keys at startup ──────────────────────────────────────────────
-validateApiKey();
+validateGeminiKey();
 
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet({
