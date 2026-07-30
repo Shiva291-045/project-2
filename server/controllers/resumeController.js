@@ -1,21 +1,40 @@
 import Resume from "../models/Resume.js";
 import * as resp from "../utils/apiResponse.js";
 import { validateResume, analyzeResume as groqAnalyze } from "../services/groqService.js";
+import { extractTextFromBase64 } from "../utils/textExtraction.js";
+
+const MIN_CHARS = 100;
+const MIN_WORDS = 20;
+
+const sufficient = (text) => {
+  const clean = (text || "").replace(/\s+/g, " ").trim();
+  const wordCount = clean.split(/\s+/).filter(w => w.length > 1).length;
+  return { clean, wordCount, ok: clean.length >= MIN_CHARS && wordCount >= MIN_WORDS };
+};
 
 /**
  * POST /api/resume/analyze
  * Flow:
  *  1. Check GROQ_API_KEY — 503 if missing
- *  2. Check extracted text ≥100 chars / ≥20 words — 422 if insufficient
+ *  2. Check extracted text ≥100 chars / ≥20 words. If insufficient and a
+ *     base64 payload was provided, attempt server-side extraction
+ *     (covers DOCX, which the client never extracts, and PDFs the
+ *     client-side extractor failed on) — 422 if still insufficient
  *  3. Groq validates: is this a real resume?
  *  4. Not a resume → 422 with reason
- *  5. Valid resume → Groq ATS analysis
+ *  5. Valid resume → Groq ATS analysis, personalized to targetRole if given
  *  6. Save to DB, return results
  */
 export const analyzeResume = async (req, res) => {
   const startTime = Date.now();
   try {
-    const { extractedText = "", fileName = "resume.pdf", base64, mimeType } = req.body;
+    const {
+      extractedText = "",
+      fileName = "resume.pdf",
+      base64,
+      mimeType,
+      targetRole = "",
+    } = req.body;
 
     // 1. Key check
     if (!process.env.GROQ_API_KEY) {
@@ -25,12 +44,32 @@ export const analyzeResume = async (req, res) => {
       );
     }
 
-    // 2. Text sufficiency
-    const text      = extractedText.replace(/\s+/g, " ").trim();
-    const wordCount = text.split(/\s+/).filter(w => w.length > 1).length;
-    console.log(`[Resume] "${fileName}" | ${text.length} chars | ${wordCount} words`);
+    // 2. Text sufficiency — try client-extracted text first
+    let { clean: text, wordCount, ok } = sufficient(extractedText);
+    let extractionMethod = text ? "client" : "none";
 
-    if (text.length < 100 || wordCount < 20) {
+    // Fall back to server-side extraction (required for DOCX; also a
+    // safety net for PDFs the client-side extractor couldn't parse)
+    if (!ok && base64) {
+      const extracted = await extractTextFromBase64(base64, mimeType, fileName);
+      if (extracted.text) {
+        const server = sufficient(extracted.text);
+        if (server.ok) {
+          text = server.clean;
+          wordCount = server.wordCount;
+          ok = true;
+          extractionMethod = extracted.method;
+        }
+      } else if (extracted.error && !ok) {
+        // Surface a specific extraction error (e.g. legacy .doc, corrupted file)
+        console.log(`[Resume] "${fileName}" | server extraction failed: ${extracted.error}`);
+        return resp.error(res, `Invalid Resume: ${extracted.error}`, 422);
+      }
+    }
+
+    console.log(`[Resume] "${fileName}" | ${text.length} chars | ${wordCount} words | source=${extractionMethod}`);
+
+    if (!ok) {
       return resp.error(res,
         "Invalid Resume: Unable to extract sufficient content from this file. " +
         "This may be a scanned image PDF or corrupted file. " +
@@ -56,10 +95,10 @@ export const analyzeResume = async (req, res) => {
       );
     }
 
-    // 5. ATS analysis
+    // 5. ATS analysis (personalized to targetRole when provided)
     let analysis;
     try {
-      analysis = await groqAnalyze(text, fileName);
+      analysis = await groqAnalyze(text, fileName, targetRole);
     } catch (e) {
       console.error("[Resume] Analysis error:", e.message);
       return resp.error(res, `Resume analysis failed: ${e.message}`, 502);
@@ -69,6 +108,7 @@ export const analyzeResume = async (req, res) => {
     Resume.create({
       userId:   req.user._id,
       fileName,
+      targetRole,
       atsScore: analysis.atsScore,
       analysis: { ...analysis, source: "groq" },
     }).catch(e => console.warn("[Resume] DB save failed:", e.message));

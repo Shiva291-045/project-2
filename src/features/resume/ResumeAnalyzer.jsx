@@ -14,6 +14,15 @@ import {
 } from "recharts";
 import toast from "react-hot-toast";
 
+/* ─── Job roles for personalized keyword/suggestion matching ───────────────── */
+const TARGET_ROLES = [
+  "Software Engineer", "Frontend Developer", "Backend Developer",
+  "Full Stack Developer", "AI Engineer", "Machine Learning Engineer",
+  "Data Scientist", "Cloud Engineer", "DevOps Engineer",
+  "Cybersecurity Analyst", "UI/UX Designer", "Mobile App Developer",
+  "Product Manager", "QA Engineer", "Data Engineer",
+];
+
 /* ─── CSP-safe PDF text extraction ─────────────────────────────────────────── */
 const extractPdfText = async (base64) => {
   try {
@@ -191,6 +200,7 @@ export const ResumeAnalyzer = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [invalidMsg,  setInvalidMsg]  = useState("");   // resume rejection
   const [serviceErr,  setServiceErr]  = useState("");   // API/service errors
+  const [targetRole,  setTargetRole]  = useState("");   // for personalized keywords
   const fileRef = useRef(null);
 
   const isLoading = loadingStep >= 0;
@@ -283,6 +293,7 @@ export const ResumeAnalyzer = () => {
         fileName: file.name,
         base64,
         mimeType: file.type,
+        targetRole,
       });
 
       setAnalysis(data.data);
@@ -405,6 +416,24 @@ export const ResumeAnalyzer = () => {
       {invalidMsg  && <InvalidScreen  reason={invalidMsg}  onReset={reset} />}
       {serviceErr  && <ServiceError   message={serviceErr} onReset={reset} />}
       {isLoading   && <LoadingView    step={loadingStep} />}
+
+      {/* Target role — personalizes missing keywords & suggestions */}
+      {!isLoading && !analysis && !invalidMsg && !serviceErr && (
+        <div className="glass rounded-2xl border border-[rgba(155,93,229,0.12)] p-4 mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <label htmlFor="target-role" className="text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">
+            Target Role <span className="text-gray-600 normal-case font-normal">(optional)</span>
+          </label>
+          <select
+            id="target-role"
+            value={targetRole}
+            onChange={e => setTargetRole(e.target.value)}
+            className="flex-1 px-3 py-2 rounded-xl bg-[rgba(255,255,255,0.04)] border border-[rgba(155,93,229,0.2)] text-sm text-white focus:outline-none focus:border-neon-purple/50 transition-colors"
+          >
+            <option value="">Auto-detect from resume</option>
+            {TARGET_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Upload zone */}
       {!isLoading && !analysis && !invalidMsg && !serviceErr && (

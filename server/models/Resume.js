@@ -2,9 +2,10 @@ import mongoose from "mongoose";
 
 const resumeSchema = new mongoose.Schema(
   {
-    userId:   { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    fileName: { type: String },
-    atsScore: { type: Number, default: 0 },
+    userId:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    fileName:   { type: String },
+    targetRole: { type: String, default: "" },
+    atsScore:   { type: Number, default: 0 },
     analysis: {
       strengths:       [String],
       improvements:    [String],
@@ -17,6 +18,10 @@ const resumeSchema = new mongoose.Schema(
         experienceScore: { type: Number, default: 0 },
         projectsScore:   { type: Number, default: 0 },
         formatScore:     { type: Number, default: 0 },
+      },
+      parsedSections: {
+        name:     { type: String, default: "" },
+        detected: { type: mongoose.Schema.Types.Mixed, default: {} },
       },
       trendingSkills:   [String],
       recommendedTech:  [String],

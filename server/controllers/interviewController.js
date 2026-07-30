@@ -6,7 +6,10 @@ import { runInterviewTurn } from "../services/groqService.js";
 /* ─── POST /api/interview/save ──────────────────────────────────────────────── */
 export const saveInterview = async (req, res) => {
   try {
-    const { mode, difficulty, role, duration, scores, transcript, analysis } = req.body;
+    const {
+      mode, difficulty, role, duration, scores, transcript, analysis,
+      sessionId, questionCount,
+    } = req.body;
     const avgScore = scores?.length
       ? scores.reduce((a, b) => a + b, 0) / scores.length
       : 0;
@@ -14,8 +17,10 @@ export const saveInterview = async (req, res) => {
     const interview = await Interview.create({
       userId: req.user._id, mode, difficulty, role,
       duration, scores, transcript, analysis,
-      avgScore:    Math.round(avgScore * 10),
-      completedAt: new Date(),
+      sessionId:     sessionId || undefined,
+      questionCount: questionCount || scores?.length || 0,
+      avgScore:      Math.round(avgScore * 10),
+      completedAt:   new Date(),
     });
 
     const user = await User.findById(req.user._id);

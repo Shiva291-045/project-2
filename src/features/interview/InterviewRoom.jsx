@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../hooks/useAuth";
@@ -48,104 +48,28 @@ const ROLES = [
   "Engineering Manager",
 ];
 
-/* ─── Role-specific opening question banks ──────────────────────── */
-const ROLE_QUESTION_BANKS = {
-  "AI Engineer": {
-    technical: [
-      "Explain the transformer architecture and why attention mechanisms were a breakthrough over RNNs.",
-      "How would you approach fine-tuning a large language model for a domain-specific task?",
-      "What's the difference between RAG and fine-tuning, and when would you choose each?",
-      "Describe how you'd design a production ML pipeline for real-time inference.",
-      "How do you handle model drift and performance degradation in production?",
-    ],
-    behavioral: [
-      "Tell me about an AI/ML project where results didn't meet expectations and how you responded.",
-      "Describe a time you had to explain a complex AI concept to a non-technical stakeholder.",
-      "How have you kept up with the rapidly evolving AI landscape?",
-    ],
-  },
-  "Cloud Engineer": {
-    technical: [
-      "Compare AWS, GCP, and Azure for a microservices-based SaaS product — what would you choose and why?",
-      "How would you design a multi-region, highly available architecture with <99.99% downtime tolerance?",
-      "Explain Kubernetes pod scheduling and how you'd handle resource constraints.",
-      "What's your approach to cloud cost optimization at scale?",
-      "Describe how you'd implement a zero-trust security model in a cloud environment.",
-    ],
-    behavioral: [
-      "Tell me about a major outage you managed. What was your incident response process?",
-      "Describe a time you had to migrate a legacy system to the cloud.",
-    ],
-  },
-  "DevOps Engineer": {
-    technical: [
-      "Walk me through a CI/CD pipeline you've built from scratch.",
-      "How would you implement blue-green deployments with zero downtime?",
-      "Explain the differences between Docker and Kubernetes and when you'd use each.",
-      "How do you approach monitoring and observability in a distributed system?",
-      "Describe your strategy for secrets management and security in pipelines.",
-    ],
-    behavioral: [
-      "Tell me about a deployment that went wrong and how you handled the rollback.",
-      "How do you balance velocity with stability when shipping frequently?",
-    ],
-  },
+/* ─── Server-side interview session API ──────────────────────────
+   All session state (asked questions, difficulty progression, scoring,
+   final report) now lives on the backend. The frontend just calls these
+   three endpoints and renders whatever comes back. ─────────────────── */
+const startInterviewSession = async (config) => {
+  const fn = () => api.post("/api/interview/session/start", {
+    mode: config.mode, role: config.role, difficulty: config.difficulty, duration: config.duration,
+  });
+  const { data } = await withRetry(fn, 2, 1000);
+  return data?.data;
 };
 
-/* ─── Generic question banks per mode ──────────────────────────── */
-const QUESTION_BANKS = {
-  technical: [
-    "Tell me about yourself and your technical background.",
-    "What's a challenging technical problem you've solved recently?",
-    "Explain the difference between SQL and NoSQL databases and when you'd choose each.",
-    "What is the time complexity of quicksort, and when would you prefer it over mergesort?",
-    "How does garbage collection work in your primary programming language?",
-    "Describe REST vs GraphQL — what are the trade-offs?",
-    "What is the CAP theorem and how does it affect distributed system design?",
-    "Walk me through how you'd approach designing a URL shortener like bit.ly.",
-    "Explain the difference between a process and a thread.",
-    "How would you debug a production performance issue with no prior context?",
-    "What design patterns do you use most frequently and why?",
-    "Explain microservices vs monolithic architecture — trade-offs for each.",
-    "How do you approach code reviews? What do you look for?",
-    "Describe your approach to writing testable, maintainable code.",
-    "What is eventual consistency and where have you dealt with it?",
-  ],
-  behavioral: [
-    "Tell me about a time you faced a difficult technical challenge and how you solved it.",
-    "Describe a situation where you had to work with a very tight deadline.",
-    "Give me an example of a time you disagreed with a team decision. What did you do?",
-    "Tell me about a project you're most proud of and your specific contribution.",
-    "Describe a situation where you had to learn something completely new under pressure.",
-    "Tell me about a time you received critical feedback. How did you respond?",
-    "Give an example of when you had to influence someone without direct authority.",
-    "Describe a failure you experienced. What did you learn from it?",
-    "Tell me about a time you mentored or helped a colleague grow.",
-    "Give an example of how you prioritize when everything feels urgent.",
-    "How did you handle a situation where you had to deliver bad news?",
-    "Tell me about a time you improved a process or system significantly.",
-  ],
-  hr: [
-    "Tell me about yourself and what brings you here today.",
-    "Why are you interested in this specific role and company?",
-    "Where do you see your career in the next 3–5 years?",
-    "What are your salary expectations and how did you arrive at that number?",
-    "What motivates you most in your work?",
-    "How do you handle stress and pressure at work?",
-    "What do you consider your greatest professional strength?",
-    "What's an area you're actively working to improve?",
-    "How do you prefer to receive feedback from managers?",
-    "Why are you looking to leave your current role?",
-    "What kind of team culture do you thrive in?",
-    "How do you approach work-life balance?",
-  ],
+const answerInterviewSession = async (sessionId, answer) => {
+  const fn = () => api.post(`/api/interview/session/${sessionId}/answer`, { answer });
+  const { data } = await withRetry(fn, 2, 1000);
+  return data?.data;
 };
 
-/* ─── AI call with retry ───────────────────────────────────────── */
-const callAI = async (messages, system, retries = 2) => {
-  const fn = () => api.post("/api/interview/ai", { messages, systemPrompt: system });
-  const { data } = await withRetry(fn, retries, 1000);
-  return data?.data?.text || "";
+const endInterviewSession = async (sessionId) => {
+  const fn = () => api.post(`/api/interview/session/${sessionId}/end`, {});
+  const { data } = await withRetry(fn, 2, 1000);
+  return data?.data;
 };
 
 const saveHistory = (session) => {
@@ -440,78 +364,108 @@ const Message = ({ role, content, score, feedback }) => (
 
 /* ─── Interview Session ─────────────────────────────────────────── */
 const InterviewSession = ({ config, onEnd }) => {
-  const [messages,       setMessages]       = useState([]);
-  const [input,          setInput]          = useState("");
-  const [loading,        setLoading]        = useState(false);
-  const [connectionErr,  setConnectionErr]  = useState(false);
-  const [timeLeft,       setTimeLeft]       = useState(config.duration * 60);
-  const [questionCount,  setQuestionCount]  = useState(0);
-  const [scores,         setScores]         = useState([]);
-  const [askedQuestions, setAskedQuestions] = useState(new Set());
-  const bottomRef = useRef(null);
-  const timerRef  = useRef(null);
+  const [messages,        setMessages]        = useState([]);
+  const [input,           setInput]           = useState("");
+  const [loading,         setLoading]         = useState(false);
+  const [connectionErr,   setConnectionErr]   = useState(false);
+  const [timeLeft,        setTimeLeft]        = useState(config.duration * 60);
+  const [questionCount,   setQuestionCount]   = useState(0);
+  const [scores,          setScores]          = useState([]);
+  const [sessionId,       setSessionId]       = useState(null);
+  const [targetQuestions, setTargetQuestions] = useState(null);
+  const [initError,       setInitError]       = useState("");
+  const bottomRef  = useRef(null);
+  const timerRef   = useRef(null);
+  const endingRef  = useRef(false); // guards against double-finalizing
+  const messagesRef = useRef(messages);
+  const scoresRef   = useRef(scores);
+  const questionCountRef = useRef(questionCount);
 
-  // Build rich context-aware system prompt
-  const systemPrompt = useMemo(() => {
-    const roleBank = ROLE_QUESTION_BANKS[config.role];
-    const roleContext = roleBank ? `\nRole-specific focus areas for ${config.role} are available in your context.` : "";
-    return `You are an expert ${config.mode} interviewer at a top tech company conducting a ${config.difficulty.toLowerCase()}-level interview for a ${config.role} position.
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { scoresRef.current = scores; }, [scores]);
+  useEffect(() => { questionCountRef.current = questionCount; }, [questionCount]);
 
-CORE BEHAVIORAL RULES:
-1. NEVER repeat a question that has already been asked — track the full conversation history
-2. Ask ONE question at a time — never multiple questions in one response
-3. Based on the candidate's last answer, ask an intelligent FOLLOW-UP that:
-   - If answer was vague → ask for specifics: "Can you walk me through a concrete example?"
-   - If answer was strong → increase difficulty: probe edge cases, trade-offs, or deeper concepts
-   - If answer was off-topic → redirect: "I appreciate that, but let's refocus on [topic]"
-   - If answer revealed a gap → explore it: ask them to explain the concept they seemed uncertain about
-4. Validate answer relevance — if they answer a different question, acknowledge and redirect
-5. Maintain conversation memory — reference earlier answers to show you're tracking
+  const finalize = useCallback(async (finalMessages, finalScores, report, questionsAnswered) => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    clearInterval(timerRef.current);
 
-RESPONSE FORMAT (strictly follow this):
-FEEDBACK: [2-3 sentence honest assessment of their specific answer — be constructive, not generic]
-SCORE: [X/10]
-NEXT: [Your next question — make it a natural follow-up to what they just said]
+    const avgScore = finalScores.length ? finalScores.reduce((a, b) => a + b, 0) / finalScores.length : 0;
+    const session = {
+      mode: config.mode, difficulty: config.difficulty, role: config.role,
+      duration: config.duration, scores: finalScores, avgScore,
+      questionsAnswered,
+      sessionId,
+      completedAt: new Date().toISOString(),
+      transcript: finalMessages.map(m => `${m.role === "user" ? "You" : "AI"}: ${m.content}`).join("\n\n"),
+      report: report || null,
+    };
+    saveHistory(session);
 
-Difficulty: ${config.difficulty}
-Role: ${config.role}
-Interview Type: ${config.mode}
-Questions asked: ${questionCount}${roleContext}
-
-Remember: Great interviewers make candidates feel heard while probing for depth.`;
-  }, [config, questionCount]);
-
-  // Get opening question — role-specific if available, else from generic bank
-  const getOpeningQuestion = useCallback(() => {
-    const roleBank = ROLE_QUESTION_BANKS[config.role];
-    const modeBank = roleBank?.[config.mode] || QUESTION_BANKS[config.mode] || QUESTION_BANKS.behavioral;
-    const available = modeBank.filter(q => !askedQuestions.has(q));
-    const pool = available.length > 0 ? available : modeBank;
-    const q = pool[Math.floor(Math.random() * pool.length)];
-    setAskedQuestions(prev => new Set([...prev, q]));
-    return q;
-  }, [config.mode, config.role, askedQuestions]);
-
-  // Start session
-  useEffect(() => {
-    const opener = getOpeningQuestion();
-    const greeting = `Hello! I'm your AI interviewer for this ${config.mode} session for the ${config.role} role. Let's make this feel like a real interview — be as detailed as you'd be with a hiring manager.\n\n${opener}`;
-    setMessages([{ role: "assistant", content: greeting }]);
-    setQuestionCount(1);
-
-    timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(timerRef.current); handleEnd(); return 0; }
-        return t - 1;
+    // Persist to the durable Interview collection (best-effort — the
+    // in-progress InterviewSession document already holds the full record).
+    try {
+      await api.post("/api/interview/save", {
+        mode: config.mode, difficulty: config.difficulty, role: config.role,
+        duration: config.duration, scores: finalScores, transcript: session.transcript,
+        sessionId, questionCount: questionsAnswered,
+        analysis: report ? {
+          strengths: report.strengths, weaknesses: report.weaknesses,
+          overall: report.summary, topicBreakdown: report.topicBreakdown,
+        } : undefined,
       });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, []); // eslint-disable-line
+    } catch (e) {
+      console.warn("[Interview] Failed to persist final record:", e.message);
+    }
+
+    onEnd(session);
+  }, [config, sessionId, onEnd]);
+
+  // Start session on the backend
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await startInterviewSession(config);
+        if (cancelled) return;
+        setSessionId(data.sessionId);
+        setTargetQuestions(data.targetQuestions);
+        const greeting = `Hello! I'm your AI interviewer for this ${config.mode} session for the ${config.role} role. Let's make this feel like a real interview — be as detailed as you'd be with a hiring manager.\n\n${data.question}`;
+        setMessages([{ role: "assistant", content: greeting }]);
+        setQuestionCount(1);
+
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => {
+            if (t <= 1) {
+              clearInterval(timerRef.current);
+              // Time's up — finalize with whatever was covered so far
+              (async () => {
+                try {
+                  const result = await endInterviewSession(data.sessionId);
+                  finalize(messagesRef.current, scoresRef.current, result?.report, questionCountRef.current);
+                } catch {
+                  finalize(messagesRef.current, scoresRef.current, null, questionCountRef.current);
+                }
+              })();
+              return 0;
+            }
+            return t - 1;
+          });
+        }, 1000);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to start interview session:", err);
+        setInitError(err.message || "Failed to start the interview. Please try again.");
+      }
+    })();
+    return () => { cancelled = true; clearInterval(timerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !sessionId) return;
     const userMsg = input.trim();
     setInput("");
     setConnectionErr(false);
@@ -519,40 +473,24 @@ Remember: Great interviewers make candidates feel heard while probing for depth.
     setLoading(true);
 
     try {
-      // Full conversation history for context
-      const history = [
-        ...messages.map(m => ({ role: m.role, content: m.content })),
-        { role: "user", content: userMsg },
-      ];
+      const result = await answerInterviewSession(sessionId, userMsg);
+      const newScores = result.score != null ? [...scores, result.score] : scores;
+      if (result.score != null) setScores(newScores);
 
-      const aiText = await callAI(history, systemPrompt);
+      // Attach score/feedback to the just-answered user message
+      const withScore = messagesRef.current.map((m, i, arr) =>
+        i === arr.length - 1
+          ? { ...m, score: result.score ?? undefined, feedback: result.feedback?.substring(0, 90) }
+          : m
+      );
+      const nextMessages = result.done ? withScore : [...withScore, { role: "assistant", content: result.question }];
+      setMessages(nextMessages);
 
-      // Parse structured response
-      const scoreMatch   = aiText.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
-      const feedbackMatch = aiText.match(/FEEDBACK:\s*(.+?)(?=\nSCORE:|SCORE:)/is);
-      const nextMatch    = aiText.match(/NEXT:\s*([\s\S]+?)$/i);
-
-      const score    = scoreMatch    ? parseFloat(scoreMatch[1])   : null;
-      const feedback = feedbackMatch ? feedbackMatch[1].trim()     : null;
-      const nextQ    = nextMatch     ? nextMatch[1].trim()         : null;
-
-      // Track the new question to avoid repeats
-      if (nextQ) setAskedQuestions(prev => new Set([...prev, nextQ]));
-
-      // Build clean display text
-      let displayText = "";
-      if (feedback) displayText += feedback + "\n\n";
-      if (nextQ)    displayText += nextQ;
-      if (!displayText) displayText = aiText.replace(/FEEDBACK:.*?\n/is, "").replace(/SCORE:.*?\n/i, "").replace(/NEXT:/i, "").trim();
-
-      if (score !== null) setScores(prev => [...prev, score]);
-
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        { ...prev[prev.length - 1], score: score ?? undefined, feedback: feedback?.substring(0, 70) },
-        { role: "assistant", content: displayText },
-      ]);
-      setQuestionCount(q => q + 1);
+      if (result.done) {
+        finalize(nextMessages, newScores, result.report, questionCount);
+      } else {
+        setQuestionCount(q => q + 1);
+      }
     } catch (err) {
       console.error("AI call failed:", err);
       setConnectionErr(true);
@@ -565,22 +503,38 @@ Remember: Great interviewers make candidates feel heard while probing for depth.
   };
 
   const handleEnd = useCallback(() => {
-    clearInterval(timerRef.current);
-    const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-    const session = {
-      mode: config.mode, difficulty: config.difficulty, role: config.role,
-      duration: config.duration, scores, avgScore,
-      questionsAnswered: questionCount,
-      completedAt: new Date().toISOString(),
-      transcript: messages.map(m => `${m.role === "user" ? "You" : "AI"}: ${m.content}`).join("\n\n"),
-    };
-    saveHistory(session);
-    onEnd(session);
-  }, [scores, config, questionCount, messages, onEnd]);
+    if (endingRef.current) return;
+    if (!sessionId) { finalize(messages, scores, null, questionCount); return; }
+    (async () => {
+      try {
+        const result = await endInterviewSession(sessionId);
+        finalize(messages, scores, result?.report, questionCount);
+      } catch (err) {
+        console.warn("[Interview] endSession failed, finalizing locally:", err.message);
+        finalize(messages, scores, null, questionCount);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, messages, scores, questionCount]);
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
   const timerColor = timeLeft < 60 ? "text-red-400" : timeLeft < 180 ? "text-amber-400" : "text-neon-cyan";
   const avgScore = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10 : 0;
+
+  if (initError) {
+    return (
+      <PageWrapper>
+        <div className="max-w-md mx-auto text-center py-16">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-white mb-2">Couldn't start the interview</h3>
+          <p className="text-gray-400 text-sm mb-6">{initError}</p>
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            <RefreshCw className="w-4 h-4" /> Try Again
+          </Button>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-surface">

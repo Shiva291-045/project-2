@@ -182,6 +182,149 @@ export const runInterviewTurn = async (messages, systemPrompt) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   INTERVIEW SESSION — OPENING QUESTION
+   Used by: POST /api/interview/session/start
+   Generates a role/mode/difficulty-appropriate first question.
+═══════════════════════════════════════════════════════════════════════════════ */
+export const generateOpeningQuestion = async ({ mode, role, difficulty }) => {
+  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company, about to start a ${difficulty.toLowerCase()}-level interview for a ${role} position.
+
+Generate ONE strong opening question — the kind a real interviewer would ask to start the conversation and get the candidate talking. It should be role-appropriate and match the requested difficulty and interview type (${mode}).
+
+Respond with ONLY valid JSON:
+{"question": "<the opening question>", "topic": "<short topic label, e.g. 'Introduction', 'System Design', 'Leadership'>"}`;
+
+  const raw = await chatCompletion(
+    [{ role: "system", content: systemPrompt }, { role: "user", content: "Generate the opening question." }],
+    { model: GROQ_MODEL, retries: 2, timeoutMs: 20000, jsonMode: true, maxTokens: 300, temperature: 0.8 }
+  );
+
+  const parsed = parseJSON(raw);
+  if (!parsed?.question) {
+    throw new Error("AI failed to generate an opening question. Please try again.");
+  }
+  return { question: parsed.question, topic: parsed.topic || "Introduction" };
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INTERVIEW SESSION — ADAPTIVE TURN
+   Used by: POST /api/interview/session/:id/answer
+   Single call that scores the candidate's last answer AND generates the next
+   context-aware, non-repeating, difficulty-progressed question. Combining
+   both into one JSON-mode call (rather than two sequential requests) halves
+   round-trip latency per turn.
+═══════════════════════════════════════════════════════════════════════════════ */
+export const runAdaptiveInterviewTurn = async ({
+  mode, role, difficulty, nextDifficulty,
+  lastQuestion, lastTopic, answer,
+  askedQuestions, topicsCovered,
+  questionNumber, targetQuestions,
+}) => {
+  const isLastQuestion = questionNumber >= targetQuestions;
+  const historyList = askedQuestions.length
+    ? askedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+    : "(none yet)";
+
+  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company conducting a structured interview for a ${role} position.
+
+CONTEXT:
+- Current difficulty: ${difficulty}
+- Next question's target difficulty: ${nextDifficulty}
+- Question ${questionNumber} of ${targetQuestions}
+- Topics already covered: ${topicsCovered.length ? topicsCovered.join(", ") : "none yet"}
+- Questions already asked (NEVER repeat any of these, even reworded):
+${historyList}
+
+YOUR TASK — evaluate the candidate's answer to the last question, then produce the next question:
+1. Score the answer honestly from 0-10 based on correctness, depth, specificity, and communication.
+2. Give constructive, specific feedback (2-3 sentences) — not generic praise.
+3. Generate ONE next question that:
+   - Is COMPLETELY DIFFERENT from every question already asked above
+   - Is a smart follow-up: if the answer was vague, ask for a concrete example or dig deeper on the same topic; if strong, escalate to a harder or more nuanced angle; if it revealed a gap, probe that gap; if off-topic, redirect naturally
+   - Matches the target difficulty "${nextDifficulty}"
+   - ${isLastQuestion ? "This is the FINAL question — make it a strong closing question that wraps up the interview well." : "Ideally introduces a new topic/angle to maximize topic coverage across the interview, unless a follow-up on the current topic is clearly more valuable."}
+
+Respond with ONLY valid JSON:
+{
+  "score": <integer 0-10>,
+  "feedback": "<2-3 sentence honest, specific feedback on their answer>",
+  "nextQuestion": "<the next interview question>",
+  "nextTopic": "<short topic label for the next question>"
+}`;
+
+  const userMessage = `Last question asked ("${lastTopic}" topic): ${lastQuestion}\n\nCandidate's answer: ${answer}`;
+
+  const raw = await chatCompletion(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userMessage  },
+    ],
+    { model: GROQ_MODEL, retries: 2, timeoutMs: 35000, jsonMode: true, maxTokens: 600, temperature: 0.75 }
+  );
+
+  const parsed = parseJSON(raw);
+  if (!parsed || typeof parsed.score !== "number" || !parsed.nextQuestion) {
+    console.error("[Groq Interview] Turn parse failed:", raw?.slice(0, 300));
+    throw new Error("AI returned an unexpected response. Please try again.");
+  }
+
+  return {
+    score:        Math.max(0, Math.min(10, Math.round(parsed.score * 10) / 10)),
+    feedback:     parsed.feedback || "",
+    nextQuestion: parsed.nextQuestion,
+    nextTopic:    parsed.nextTopic || "General",
+  };
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INTERVIEW SESSION — FINAL REPORT
+   Used by: interview session completion (auto or manual end)
+   Produces a detailed performance report from the full Q&A history.
+═══════════════════════════════════════════════════════════════════════════════ */
+export const generateInterviewReport = async ({ mode, role, qa }) => {
+  const transcript = qa.map((item, i) =>
+    `Q${i + 1} [${item.difficulty}/${item.topic}]: ${item.question}\nAnswer: ${item.answer || "(no answer given)"}\nScore given: ${item.score ?? "N/A"}/10`
+  ).join("\n\n");
+
+  const systemPrompt = `You are a senior technical recruiter producing a final performance report for a candidate who just completed a ${mode} interview for a ${role} position.
+
+Analyze the FULL transcript below — all questions, answers, and per-question scores — and produce an honest, detailed, specific report. Do not be generic; reference actual topics and answers from the transcript.
+
+Respond with ONLY valid JSON matching this EXACT structure:
+{
+  "overallScore": <integer 0-100, weighted holistic assessment — not just the average of per-question scores>,
+  "strengths": ["<specific strength grounded in an actual answer>", "<specific strength>", "<specific strength>"],
+  "weaknesses": ["<specific weakness grounded in an actual answer>", "<specific weakness>", "<specific weakness>"],
+  "suggestions": ["<actionable improvement suggestion>", "<actionable improvement suggestion>", "<actionable improvement suggestion>"],
+  "topicBreakdown": {"<topic name>": <average score 0-10 for that topic>, ...},
+  "summary": "<3-4 sentence honest overall assessment of interview performance and hire-readiness>"
+}`;
+
+  const raw = await chatCompletion(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: `Full interview transcript:\n\n${transcript}` },
+    ],
+    { model: GROQ_MODEL, retries: 2, timeoutMs: 45000, jsonMode: true, maxTokens: 1500, temperature: 0.4 }
+  );
+
+  const parsed = parseJSON(raw);
+  if (!parsed || typeof parsed.overallScore !== "number") {
+    console.error("[Groq Interview] Report parse failed:", raw?.slice(0, 300));
+    throw new Error("AI failed to generate the performance report. Please try again.");
+  }
+
+  parsed.overallScore = clamp(parsed.overallScore);
+  ["strengths", "weaknesses", "suggestions"].forEach(k => {
+    if (!Array.isArray(parsed[k])) parsed[k] = [];
+  });
+  if (!parsed.topicBreakdown || typeof parsed.topicBreakdown !== "object") parsed.topicBreakdown = {};
+  parsed.summary = parsed.summary || "";
+
+  return parsed;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    RESUME VALIDATION
    Used by: POST /api/resume/analyze (step 1)
    Returns: { isResume: boolean, reason: string }
@@ -243,7 +386,11 @@ or
    Used by: POST /api/resume/analyze (step 2 — only after validation passes)
    Returns: Full ATS analysis object
 ═══════════════════════════════════════════════════════════════════════════════ */
-export const analyzeResume = async (extractedText, fileName) => {
+export const analyzeResume = async (extractedText, fileName, targetRole = "") => {
+  const roleInstruction = targetRole
+    ? `\n\nTARGET ROLE: The candidate is applying for "${targetRole}" positions. Tailor "missingKeywords" to skills/keywords expected for THIS specific role that are absent from the resume, tailor "suggestions" to close the gap toward this role, and factor role-fit into "summary" and "overallFeedback".`
+    : `\n\nNo target role was specified — infer the most likely role from the resume content itself and base "missingKeywords"/"suggestions" on that inferred role.`;
+
   const systemPrompt = `You are an expert ATS (Applicant Tracking System) resume analyzer and senior technical recruiter with 20+ years at top tech companies (Google, Meta, Amazon).
 
 Your analysis must be SPECIFIC to the actual resume content — not generic advice.
@@ -260,6 +407,10 @@ SKILL EXTRACTION RULES:
 - Include: languages, frameworks, libraries, databases, cloud services, tools, DevOps, AI/ML
 - Do NOT skip skills just because they appear in context rather than a list
 
+SECTION PARSING:
+- Identify these sections and whether each is present in the resume: Name, Skills, Education, Experience, Projects, Certifications
+- Extract the candidate's full name if present at the top of the document${roleInstruction}
+
 Respond with ONLY valid JSON matching this EXACT structure:
 {
   "atsScore": <integer 0-100>,
@@ -271,17 +422,22 @@ Respond with ONLY valid JSON matching this EXACT structure:
   "education": {"score": <0-100>, "details": "<degree, institution, year>", "feedback": "<specific feedback>"},
   "experience": {"score": <0-100>, "yearsEstimate": "<X years>", "feedback": "<specific feedback>"},
   "projects": {"score": <0-100>, "count": <number>, "feedback": "<specific feedback>"},
-  "missingKeywords": ["<important missing keyword>"],
+  "missingKeywords": ["<important missing keyword relevant to the target/inferred role>"],
   "suggestions": ["<actionable suggestion>", "<actionable suggestion>", "<actionable suggestion>", "<actionable suggestion>"],
   "trendingSkills": ["<5 trending skills in this field>"],
   "recommendedTech": ["<5 technologies to learn>"],
   "sections": {"skillsScore": <0-100>, "experienceScore": <0-100>, "projectsScore": <0-100>, "formatScore": <0-100>},
-  "overallFeedback": "<3-4 sentences of professional recruiter feedback>"
+  "overallFeedback": "<3-4 sentences of professional recruiter feedback>",
+  "parsedSections": {
+    "name": "<candidate's name or empty string if not found>",
+    "detected": {"name": <bool>, "skills": <bool>, "education": <bool>, "experience": <bool>, "projects": <bool>, "certifications": <bool>}
+  },
+  "targetRole": "${targetRole || "<inferred role>"}"
 }`;
 
-  const userMessage = `Analyze this resume thoroughly (file: ${fileName}):\n\n---\n${extractedText.slice(0, 7000)}\n---`;
+  const userMessage = `Analyze this resume thoroughly (file: ${fileName}${targetRole ? `, target role: ${targetRole}` : ""}):\n\n---\n${extractedText.slice(0, 7000)}\n---`;
 
-  console.log(`[Groq Resume] Running ATS analysis for: ${fileName}`);
+  console.log(`[Groq Resume] Running ATS analysis for: ${fileName}${targetRole ? ` (role: ${targetRole})` : ""}`);
 
   const raw = await chatCompletion(
     [
@@ -320,6 +476,18 @@ Respond with ONLY valid JSON matching this EXACT structure:
   ["strengths","improvements","technicalSkills","softSkills",
    "missingKeywords","suggestions","trendingSkills","recommendedTech",
   ].forEach(k => { if (!Array.isArray(parsed[k])) parsed[k] = []; });
+
+  // Ensure parsedSections has a safe shape
+  if (!parsed.parsedSections || typeof parsed.parsedSections !== "object") {
+    parsed.parsedSections = { name: "", detected: {} };
+  }
+  parsed.parsedSections.detected = parsed.parsedSections.detected || {};
+  ["name","skills","education","experience","projects","certifications"].forEach(k => {
+    parsed.parsedSections.detected[k] = !!parsed.parsedSections.detected[k];
+  });
+  parsed.parsedSections.name = typeof parsed.parsedSections.name === "string" ? parsed.parsedSections.name : "";
+
+  if (targetRole) parsed.targetRole = targetRole;
 
   console.log(`[Groq Resume] ✅ ATS done — Score: ${parsed.atsScore}, Skills: ${parsed.technicalSkills.length}`);
   return parsed;
