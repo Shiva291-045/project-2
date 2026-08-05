@@ -459,7 +459,7 @@ const InterviewSession = ({ config, onEnd }) => {
       }
     })();
     return () => { cancelled = true; clearInterval(timerRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -514,7 +514,7 @@ const InterviewSession = ({ config, onEnd }) => {
         finalize(messages, scores, null, questionCount);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line
   }, [sessionId, messages, scores, questionCount]);
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;

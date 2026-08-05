@@ -23,48 +23,114 @@ const TARGET_ROLES = [
   "Product Manager", "QA Engineer", "Data Engineer",
 ];
 
+/* ─── PDF.js worker configuration ────────────────────────────────────────────
+ * WHY THIS IS NEEDED:
+ * Since pdfjs-dist v3+, all PDF parsing runs on a background Worker thread —
+ * there is no automatic "run on the main thread" fallback in a browser
+ * bundle. If `GlobalWorkerOptions.workerSrc` isn't set to a real script
+ * before the first `getDocument()` call, pdf.js throws
+ * "No GlobalWorkerOptions.workerSrc specified." and every extraction
+ * silently returns 0 chars. The previous code set `workerSrc = ""`, which
+ * is falsy and triggers exactly that error — that was the bug.
+ *
+ * `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)` is the
+ * bundler-native way to reference the worker script. This project runs on
+ * Create React App / react-scripts 5, which builds on webpack 5 — and
+ * webpack 5 (same as Vite) recognizes this exact `new URL(..., import.meta.url)`
+ * pattern at build time: it emits the worker file as its own fingerprinted
+ * asset and rewrites the URL automatically. That means this works correctly
+ * in dev AND production builds with zero manual file copying into /public,
+ * and it needs zero framework-specific branching.
+ *
+ * `getPdfjs()` loads and configures the library exactly ONCE (the promise is
+ * cached) — the worker is never reconfigured on every upload, and pdfjs-dist
+ * stays out of the main bundle until a PDF is actually uploaded.
+ * ────────────────────────────────────────────────────────────────────────── */
+let _pdfjsPromise = null;
+const getPdfjs = () => {
+  if (!_pdfjsPromise) {
+    _pdfjsPromise = import("pdfjs-dist/build/pdf.mjs").then((pdfjsLib) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url
+      ).toString();
+      return pdfjsLib;
+    });
+  }
+  return _pdfjsPromise;
+};
+
 /* ─── CSP-safe PDF text extraction ─────────────────────────────────────────── */
 const extractPdfText = async (base64) => {
+  let pdf = null;
   try {
-    const pdfjsLib = await import("pdfjs-dist/build/pdf");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    const pdfjsLib = await getPdfjs();
 
-    const pdf = await pdfjsLib.getDocument({
-      data:            atob(base64),
+    let bytes;
+    try {
+      bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    } catch (decodeErr) {
+      console.error("[PDF] base64 decode failed — file may be corrupted:", decodeErr.message);
+      return "";
+    }
+
+    pdf = await pdfjsLib.getDocument({
+      data:            bytes,
       useWorkerFetch:  false,
       isEvalSupported: false,
       useSystemFonts:  true,
     }).promise;
 
     let allText = "";
-    const pageCount = Math.min(pdf.numPages, 10);
+    // Cap page count for very large PDFs — resumes are never legitimately
+    // this long, and this keeps extraction fast without failing the upload.
+    const pageCount = Math.min(pdf.numPages, 15);
 
     for (let i = 1; i <= pageCount; i++) {
-      const page    = await pdf.getPage(i);
-      const content = await page.getTextContent({ normalizeWhitespace: true });
+      let page = null;
+      try {
+        page = await pdf.getPage(i);
+        const content = await page.getTextContent({ normalizeWhitespace: true });
 
-      // Group items by Y-coordinate to reconstruct natural reading order
-      const lines = new Map();
-      for (const item of content.items) {
-        if (!item.str?.trim()) continue;
-        const y = Math.round((item.transform?.[5] || 0) / 2) * 2; // bin to 2px
-        if (!lines.has(y)) lines.set(y, []);
-        lines.get(y).push(item.str);
+        // Group items by Y-coordinate to reconstruct natural reading order.
+        // Word/Canva/Google Docs exports all lay text out with absolute
+        // positioning rather than a text stream, so this is what makes
+        // extraction work for all three rather than just "simple" PDFs.
+        const lines = new Map();
+        for (const item of content.items) {
+          if (!item.str?.trim()) continue;
+          const y = Math.round((item.transform?.[5] || 0) / 2) * 2; // bin to 2px
+          if (!lines.has(y)) lines.set(y, []);
+          lines.get(y).push(item.str);
+        }
+
+        // Sort top-to-bottom, join each line
+        const pageText = [...lines.entries()]
+          .sort((a, b) => b[0] - a[0])
+          .map(([, words]) => words.join(" "))
+          .join("\n");
+
+        allText += pageText + "\n\n";
+      } catch (pageErr) {
+        // One malformed page shouldn't sink extraction of the whole resume
+        console.error(`[PDF] Failed to extract page ${i}/${pageCount}:`, pageErr.message);
+      } finally {
+        page?.cleanup?.();
       }
-
-      // Sort top-to-bottom, join each line
-      const pageText = [...lines.entries()]
-        .sort((a, b) => b[0] - a[0])
-        .map(([, words]) => words.join(" "))
-        .join("\n");
-
-      allText += pageText + "\n\n";
     }
 
     return allText.trim();
   } catch (err) {
-    console.warn("[PDF] Text extraction failed:", err.message);
+    // Non-fatal by design: the caller falls back to server-side extraction
+    // (pdf-parse) rather than failing the whole Resume Analyzer.
+    console.error("[PDF] Client-side extraction failed — falling back to server-side parsing:", err.message);
     return "";
+  } finally {
+    // Release the worker-side document to avoid leaking memory across
+    // repeated uploads within the same session.
+    if (pdf) {
+      try { await pdf.destroy(); } catch { /* already released */ }
+    }
   }
 };
 
@@ -112,10 +178,11 @@ const ScoreBar = ({ label, score, icon: Icon, color }) => (
 
 /* ─── Loading steps ─────────────────────────────────────────────────────────── */
 const STEPS = [
-  { label: "Reading file",        icon: FileText },
-  { label: "Extracting text",     icon: Brain },
-  { label: "Validating resume",   icon: Shield },
-  { label: "AI ATS analysis",     icon: TrendingUp },
+  { label: "Reading file",           icon: FileText },
+  { label: "Extracting text",        icon: Brain },
+  { label: "Uploading to server",    icon: Upload },
+  { label: "Validating resume",      icon: Shield },
+  { label: "AI ATS analysis",        icon: TrendingUp },
 ];
 
 const LoadingView = ({ step }) => (
@@ -255,38 +322,46 @@ export const ResumeAnalyzer = () => {
       setResume({ name: file.name, size: file.size, type: file.type });
       setPreviewUrl(URL.createObjectURL(file));
 
-      // ── Step 1: Extract text ─────────────────────────────────────────────
+      // ── Step 1: Extract text (client-side, best-effort) ──────────────────
       setLoadingStep(1); // "Extracting text"
       let extractedText = "";
 
-      if (file.type === "application/pdf") {
-        extractedText = await extractPdfText(base64);
-      } else if (file.type === "text/plain") {
-        extractedText = await file.text();
+      try {
+        if (file.type === "application/pdf") {
+          extractedText = await extractPdfText(base64);
+        } else if (file.type === "text/plain") {
+          extractedText = await file.text();
+        }
+        // DOC/DOCX — browsers can't parse these; the server extracts via mammoth
+      } catch (extractErr) {
+        // extractPdfText already catches internally and returns "", but guard
+        // here too so a client-side extraction bug can NEVER fail the whole
+        // Resume Analyzer — the backend extraction fallback below still runs.
+        console.error(`[ResumeAnalyzer] Unexpected client-side extraction error for "${file.name}":`, extractErr);
       }
-      // DOC/DOCX — server handles extraction from base64
 
       const wordCount = meaningfulWordCount(extractedText);
-      console.log(`[ResumeAnalyzer] Extracted ${extractedText.length} chars, ${wordCount} words from "${file.name}"`);
+      const clientTextSufficient = extractedText.length >= 100 && wordCount >= 20;
+      console.log(
+        `[ResumeAnalyzer] Client extraction: ${extractedText.length} chars, ${wordCount} words from "${file.name}"` +
+        (clientTextSufficient ? "" : " — insufficient, backend will extract server-side instead")
+      );
 
-      // ── Step 2: Pre-check text sufficiency ──────────────────────────────
-      setLoadingStep(2); // "Validating resume"
-
-      // For scanned/image PDFs with no extractable text, show clear message
-      if (file.type === "application/pdf" && (extractedText.length < 100 || wordCount < 20)) {
-        setInvalidMsg(
-          "Invalid Resume: Unable to extract sufficient resume content from this PDF.\n\n" +
-          "This is likely a scanned image PDF. Please:\n" +
-          "• Export your resume as a text-based PDF from Word/Google Docs\n" +
-          "• Upload a .docx or .txt version instead\n" +
-          "• Ensure the PDF contains selectable text"
-        );
-        setLoadingStep(-1);
-        return;
+      // ── Step 2: Signal server-side fallback when client extraction is thin ──
+      // We deliberately do NOT show an error here. DOCX always needs this path
+      // (browsers can't parse .docx), and some PDFs — scanned pages, unusual
+      // fonts/encodings from less common exporters — do too. The backend has
+      // its own pdf-parse/mammoth extraction and uses it automatically
+      // whenever `extractedText` is empty or too short. An error is only ever
+      // shown if the backend's own extraction ALSO comes up short (handled
+      // in the catch block below via the 422 response).
+      if (!clientTextSufficient) {
+        setLoadingStep(2); // "Uploading to server"
       }
 
-      // ── Step 3: Send to backend (Gemini validates + analyzes) ────────────
-      setLoadingStep(3); // "AI ATS analysis"
+      // ── Step 3/4: Validate + analyze (single backend call handles both) ──
+      setLoadingStep(3); // "Validating resume"
+      setLoadingStep(4); // "AI ATS analysis"
 
       const { data } = await api.post("/api/resume/analyze", {
         extractedText,
@@ -300,7 +375,7 @@ export const ResumeAnalyzer = () => {
       toast.success("Resume analyzed by Gemini AI!");
 
     } catch (err) {
-      console.error("[ResumeAnalyzer] Error:", err);
+      console.error(`[ResumeAnalyzer] Analysis failed for "${file.name}":`, err);
 
       if (err.status === 422) {
         // Invalid resume — Gemini rejected it or insufficient text
