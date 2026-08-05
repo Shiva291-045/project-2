@@ -2,6 +2,7 @@ import InterviewSession from "../models/InterviewSession.js";
 import Interview        from "../models/Interview.js";
 import User             from "../models/User.js";
 import * as resp from "../utils/apiResponse.js";
+import { recordActivity } from "../utils/streakService.js";
 import {
   generateOpeningQuestion,
   runAdaptiveInterviewTurn,
@@ -85,6 +86,8 @@ export const startSession = async (req, res) => {
       qa: [{ question: opening.question, difficulty, topic: opening.topic }],
       topicsCovered:   [opening.topic],
     });
+
+    recordActivity(req.user._id).catch(e => console.warn("[Streak] session start:", e.message));
 
     return resp.success(res, {
       sessionId:       session._id,

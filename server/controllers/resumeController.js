@@ -2,6 +2,7 @@ import Resume from "../models/Resume.js";
 import * as resp from "../utils/apiResponse.js";
 import { validateResume, analyzeResume as groqAnalyze } from "../services/groqService.js";
 import { extractTextFromBase64 } from "../utils/textExtraction.js";
+import { recordActivity } from "../utils/streakService.js";
 
 const MIN_CHARS = 100;
 const MIN_WORDS = 20;
@@ -112,6 +113,8 @@ export const analyzeResume = async (req, res) => {
       atsScore: analysis.atsScore,
       analysis: { ...analysis, source: "groq" },
     }).catch(e => console.warn("[Resume] DB save failed:", e.message));
+
+    recordActivity(req.user._id).catch(e => console.warn("[Streak] resume analyze:", e.message));
 
     const elapsed = Date.now() - startTime;
     console.log(`[Resume] ✅ "${fileName}" done in ${elapsed}ms — ATS: ${analysis.atsScore}`);

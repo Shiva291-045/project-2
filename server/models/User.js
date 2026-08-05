@@ -20,7 +20,13 @@ const userSchema = new mongoose.Schema(
     totalInterviews:   { type: Number, default: 0 },
     avgInterviewScore: { type: Number, default: 0 },
     problemsSolved:    { type: Number, default: 0 },
-    streak:            { type: Number, default: 0 },
+    // Streak — `streak` is the CURRENT streak (kept as the original field
+    // name for backward compatibility with existing leaderboard queries).
+    streak:              { type: Number, default: 0 },
+    longestStreak:       { type: Number, default: 0 },
+    lastActivityDate:     { type: String, default: null }, // "YYYY-MM-DD" (UTC)
+    streakFreezes:        { type: Number, default: 1 },      // available freezes
+    lastFreezeGrantMonth: { type: String, default: null },   // "YYYY-MM" — guards the once-per-month grant
     xp:                { type: Number, default: 0 },
     lastActive:        { type: Date,   default: Date.now },
     // Premium / subscription

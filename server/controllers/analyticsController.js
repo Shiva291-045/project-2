@@ -2,6 +2,7 @@ import Interview from "../models/Interview.js";
 import SolvedProblem from "../models/SolvedProblem.js";
 import User from "../models/User.js";
 import * as resp from "../utils/apiResponse.js";
+import { getStreakCalendar } from "../utils/streakService.js";
 
 export const getAnalytics = async (req, res) => {
   try {
@@ -43,5 +44,19 @@ export const getAnalytics = async (req, res) => {
     });
   } catch (err) {
     return resp.error(res, "Failed to fetch analytics.", 500);
+  }
+};
+
+// ── GET /api/analytics/streak?days=182 ─────────────────────────────────────
+// Returns the current/longest streak, freezes available, and a day-by-day
+// calendar (default ~6 months) for a GitHub-style contribution heatmap.
+export const getStreak = async (req, res) => {
+  try {
+    const days = Math.min(365, Math.max(30, parseInt(req.query.days, 10) || 182));
+    const data = await getStreakCalendar(req.user._id, days);
+    return resp.success(res, data);
+  } catch (err) {
+    console.error("[Analytics] getStreak error:", err.message);
+    return resp.error(res, "Failed to fetch streak data.", 500);
   }
 };

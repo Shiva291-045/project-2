@@ -1,6 +1,7 @@
 import SolvedProblem from "../models/SolvedProblem.js";
 import User from "../models/User.js";
 import * as resp from "../utils/apiResponse.js";
+import { recordActivity } from "../utils/streakService.js";
 
 // ── POST /api/coding/solved ───────────────────────────────────────────────────
 export const markSolved = async (req, res) => {
@@ -14,6 +15,7 @@ export const markSolved = async (req, res) => {
     }
     await SolvedProblem.create({ userId: req.user._id, problemId, title, topic, difficulty });
     await User.findByIdAndUpdate(req.user._id, { $inc: { problemsSolved: 1, xp: 10 } });
+    recordActivity(req.user._id).catch(e => console.warn("[Streak] problem solved:", e.message));
     return resp.success(res, { solved: true }, "Problem marked as solved! +10 XP");
   } catch (err) {
     return resp.error(res, "Failed to update solved status.", 500);
