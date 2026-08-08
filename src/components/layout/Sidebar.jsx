@@ -1,15 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, MessageSquare, FileText, Code2,
-  TrendingUp, Trophy, User, ChevronLeft, ChevronRight,
-  Crown, Sparkles,
+  TrendingUp, Trophy, User, Crown, Sparkles, LogOut,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import clsx from "clsx";
-
-const SIDEBAR_KEY = "prepai_sidebar_collapsed";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard",   href: "/dashboard",   color: "text-neon-purple" },
@@ -22,49 +19,54 @@ const menuItems = [
 ];
 
 export const Sidebar = () => {
-  // ✅ Collapsed by default — only expand if user previously opened it
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      const stored = localStorage.getItem(SIDEBAR_KEY);
-      return stored === null ? true : stored === "true";
-    } catch { return true; }
-  });
+  /**
+   * Hover-to-expand sidebar
+   * ---------------------------------------------------------------------
+   * Collapsed (icon-only, 72px) by default. Expanding is purely a hover
+   * interaction — no click-to-toggle, no persisted preference — and it
+   * collapses again the instant the pointer leaves. `expanded` also
+   * responds to keyboard focus (via onFocus/onBlur below) so keyboard
+   * users aren't stuck on icon-only labels just because they can't
+   * "hover" with a keyboard — this is the equivalent of the CSS
+   * :hover / :focus-within pattern, done in React state since the width
+   * transition needs to coordinate with framer-motion's label animation.
+   *
+   * The sidebar is fixed + layered above the page (z-40) while the main
+   * content area's left margin is pinned to the COLLAPSED width in
+   * PageWrapper.jsx (`ml-[72px]`, never changes) — so expanding on hover
+   * overlays the page instead of pushing/reflowing it.
+   */
+  const [expanded, setExpanded] = useState(false);
+  const collapsed = !expanded;
 
-  const location  = useLocation();
-  const { userProfile } = useAuth();
+  const location = useLocation();
+  const navigate  = useNavigate();
+  const { userProfile, logout } = useAuth();
   const isPremium = userProfile?.isPremium || false;
-
-  // Persist user preference
-  const toggle = () => {
-    setCollapsed(prev => {
-      const next = !prev;
-      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch {}
-      return next;
-    });
-  };
 
   const isActive = (href) => location.pathname === href || location.pathname.startsWith(href + "/");
 
+  const handleLogout = () => { logout(); navigate("/", { replace: true }); };
+
+  // Collapse on blur only once focus has actually left the whole sidebar —
+  // not just moved from one link to the next link inside it.
+  const handleBlur = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setExpanded(false);
+  };
+
   return (
     <aside
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      onFocus={() => setExpanded(true)}
+      onBlur={handleBlur}
       className={clsx(
         "fixed left-0 top-16 h-[calc(100vh-64px)] z-40 flex flex-col",
         "glass-strong border-r border-[rgba(155,93,229,0.12)]",
         "transition-all duration-300 ease-in-out",
-        collapsed ? "w-[72px]" : "w-60"
+        collapsed ? "w-[72px]" : "w-60 shadow-[8px_0_32px_rgba(0,0,0,0.4)]"
       )}
     >
-      {/* Collapse toggle */}
-      <button
-        onClick={toggle}
-        className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-surface-elevated border border-[rgba(155,93,229,0.3)] flex items-center justify-center text-gray-400 hover:text-white hover:border-neon-purple/60 transition-all duration-200 z-10 shadow-[0_0_10px_rgba(0,0,0,0.4)]"
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        {collapsed
-          ? <ChevronRight className="w-3 h-3" />
-          : <ChevronLeft  className="w-3 h-3" />}
-      </button>
-
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-hidden">
         {menuItems.map((item) => {
@@ -117,7 +119,7 @@ export const Sidebar = () => {
 
       {/* Premium CTA */}
       {!collapsed && !isPremium && (
-        <div className="px-3 pb-4">
+        <div className="px-3 pb-3">
           <Link
             to="/pricing"
             className="block p-3 rounded-xl bg-gradient-to-br from-brand-500/20 to-neon-cyan/10 border border-brand-500/30 hover:border-brand-500/50 transition-all duration-200 group"
@@ -135,12 +137,36 @@ export const Sidebar = () => {
       )}
 
       {collapsed && !isPremium && (
-        <div className="px-3 pb-4">
+        <div className="px-3 pb-3">
           <Link to="/pricing" title="Upgrade to Premium" className="flex items-center justify-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-400/30 hover:border-amber-400/60 transition-all">
             <Crown className="w-5 h-5 text-amber-400" />
           </Link>
         </div>
       )}
+
+      {/* Logout — separated with its own border, distinct danger tint on hover/focus only (not shouty by default) */}
+      <div className="px-3 pb-4 pt-2 border-t border-[rgba(155,93,229,0.1)]">
+        <button
+          onClick={handleLogout}
+          title={collapsed ? "Logout" : undefined}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all duration-200 group"
+        >
+          <LogOut className="w-5 h-5 flex-shrink-0 text-gray-500 group-hover:text-red-400 transition-colors duration-200" />
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.span
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2 }}
+                className="text-sm font-medium whitespace-nowrap overflow-hidden"
+              >
+                Logout
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+      </div>
     </aside>
   );
 };
