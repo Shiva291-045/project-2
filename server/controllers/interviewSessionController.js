@@ -1,6 +1,7 @@
 import InterviewSession from "../models/InterviewSession.js";
 import Interview        from "../models/Interview.js";
 import User             from "../models/User.js";
+import Resume           from "../models/Resume.js";
 import * as resp from "../utils/apiResponse.js";
 import { recordActivity } from "../utils/streakService.js";
 import {
@@ -55,6 +56,33 @@ const handleGroqError = (res, err, fallbackMsg) => {
   return resp.error(res, fallbackMsg, 502);
 };
 
+// How many of the most recent qa entries share the same topic — used for
+// topic-mastery gating (don't let the interview bounce topics every turn).
+const countQuestionsOnCurrentTopic = (qa, topic) => {
+  let count = 0;
+  for (let i = qa.length - 1; i >= 0; i--) {
+    if (qa[i].topic !== topic) break;
+    count++;
+  }
+  return count;
+};
+
+// Best-effort: a short, safe summary of the candidate's most recent resume
+// analysis to ground interview questions in their actual background. Never
+// blocks session start if it fails or nothing's on file.
+const getResumeContext = async (userId) => {
+  try {
+    const latest = await Resume.findOne({ userId }).sort({ createdAt: -1 }).select("analysis.technicalSkills analysis.summary");
+    if (!latest?.analysis) return "";
+    const skills = (latest.analysis.technicalSkills || []).slice(0, 10).join(", ");
+    const summary = latest.analysis.summary || "";
+    if (!skills && !summary) return "";
+    return [summary, skills ? `Key skills: ${skills}` : ""].filter(Boolean).join(". ");
+  } catch {
+    return "";
+  }
+};
+
 /* ─── POST /api/interview/session/start ─────────────────────────────────────
    body: { mode, role, difficulty, duration (minutes) }
 ──────────────────────────────────────────────────────────────────────────── */
@@ -62,16 +90,18 @@ export const startSession = async (req, res) => {
   try {
     if (!requireGroqKey(res)) return;
 
-    const { mode, role, difficulty = "Medium", duration = 10 } = req.body;
+    const { mode, role, difficulty = "Medium", duration = 10, company = "", weakTopics = [] } = req.body;
     if (!["technical", "behavioral", "hr"].includes(mode)) {
       return resp.error(res, "Invalid interview mode.", 400);
     }
 
     const targetQuestions = questionTargetForDuration(duration);
+    const resumeContext = await getResumeContext(req.user._id);
+    const cleanWeakTopics = Array.isArray(weakTopics) ? weakTopics.filter(t => typeof t === "string").slice(0, 5) : [];
 
     let opening;
     try {
-      opening = await generateOpeningQuestion({ mode, role, difficulty });
+      opening = await generateOpeningQuestion({ mode, role, difficulty, company, resumeContext, weakTopics: cleanWeakTopics });
     } catch (err) {
       return handleGroqError(res, err, "Failed to start the interview. Please try again.");
     }
@@ -80,6 +110,8 @@ export const startSession = async (req, res) => {
       userId:          req.user._id,
       mode,
       role:            role || "Software Engineer",
+      company,
+      weakTopics:      cleanWeakTopics,
       baseDifficulty:  difficulty,
       duration:        Math.round(duration * 60),
       targetQuestions,
@@ -145,6 +177,8 @@ export const submitAnswer = async (req, res) => {
           lastQuestion: current.question, lastTopic: current.topic, answer: current.answer,
           askedQuestions, topicsCovered: session.topicsCovered,
           questionNumber, targetQuestions: session.targetQuestions,
+          questionsOnCurrentTopic: countQuestionsOnCurrentTopic(session.qa, current.topic),
+          company: session.company, weakTopics: session.weakTopics,
         });
       } catch (err) {
         return handleGroqError(res, err, "Failed to score your final answer. Please try again.");
@@ -188,6 +222,8 @@ export const submitAnswer = async (req, res) => {
         lastQuestion: current.question, lastTopic: current.topic, answer: current.answer,
         askedQuestions, topicsCovered: session.topicsCovered,
         questionNumber, targetQuestions: session.targetQuestions,
+        questionsOnCurrentTopic: countQuestionsOnCurrentTopic(session.qa, current.topic),
+        company: session.company, weakTopics: session.weakTopics,
       });
     } catch (err) {
       return handleGroqError(res, err, "AI failed to generate the next question. Please try again.");

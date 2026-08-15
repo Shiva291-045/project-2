@@ -35,6 +35,7 @@ export const analyzeResume = async (req, res) => {
       base64,
       mimeType,
       targetRole = "",
+      targetCompany = "",
     } = req.body;
 
     // 1. Key check
@@ -99,7 +100,7 @@ export const analyzeResume = async (req, res) => {
     // 5. ATS analysis (personalized to targetRole when provided)
     let analysis;
     try {
-      analysis = await groqAnalyze(text, fileName, targetRole);
+      analysis = await groqAnalyze(text, fileName, targetRole, targetCompany);
     } catch (e) {
       console.error("[Resume] Analysis error:", e.message);
       return resp.error(res, `Resume analysis failed: ${e.message}`, 502);
@@ -110,6 +111,7 @@ export const analyzeResume = async (req, res) => {
       userId:   req.user._id,
       fileName,
       targetRole,
+      targetCompany,
       atsScore: analysis.atsScore,
       analysis: { ...analysis, source: "groq" },
     }).catch(e => console.warn("[Resume] DB save failed:", e.message));

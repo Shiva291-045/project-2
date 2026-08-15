@@ -7,6 +7,7 @@ const interviewSchema = new mongoose.Schema(
     mode:          { type: String, enum: ["technical", "behavioral", "hr"], required: true },
     difficulty:    { type: String, enum: ["Easy", "Medium", "Hard"], default: "Medium" },
     role:          { type: String, default: "Software Engineer" },
+    company:       { type: String, default: "" },
     duration:      { type: Number, default: 0 },          // seconds
     scores:        [{ type: Number }],
     avgScore:      { type: Number, default: 0 },
@@ -15,11 +16,15 @@ const interviewSchema = new mongoose.Schema(
     // per-message array, since that's owned by InterviewSession.qa.
     transcript:    { type: String, default: "" },
     analysis: {
-      strengths:      [String],
-      weaknesses:     [String],
-      improvements:   [String],
-      overall:        String,
-      topicBreakdown: { type: mongoose.Schema.Types.Mixed, default: {} },
+      strengths:            [String],
+      weaknesses:           [String],
+      improvements:         [String],
+      overall:              String,
+      topicBreakdown:       { type: mongoose.Schema.Types.Mixed, default: {} },
+      technicalScore:       { type: Number, default: null },
+      communicationScore:   { type: Number, default: null },
+      problemSolvingScore:  { type: Number, default: null },
+      recommendedDsaTopics: [String],
     },
     completedAt: { type: Date },
   },

@@ -3,6 +3,7 @@ import SolvedProblem from "../models/SolvedProblem.js";
 import User from "../models/User.js";
 import * as resp from "../utils/apiResponse.js";
 import { getStreakCalendar } from "../utils/streakService.js";
+import { getReadiness } from "../utils/readinessService.js";
 
 export const getAnalytics = async (req, res) => {
   try {
@@ -58,5 +59,18 @@ export const getStreak = async (req, res) => {
   } catch (err) {
     console.error("[Analytics] getStreak error:", err.message);
     return resp.error(res, "Failed to fetch streak data.", 500);
+  }
+};
+
+// ── GET /api/analytics/readiness ────────────────────────────────────────────
+// Centralized placement-readiness score, built entirely from real stored
+// data (see readinessService.js) — never fabricated.
+export const getReadinessScore = async (req, res) => {
+  try {
+    const data = await getReadiness(req.user._id);
+    return resp.success(res, data);
+  } catch (err) {
+    console.error("[Analytics] getReadinessScore error:", err.message);
+    return resp.error(res, "Failed to compute readiness score.", 500);
   }
 };
