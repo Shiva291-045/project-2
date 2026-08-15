@@ -10,8 +10,11 @@ const userSchema = new mongoose.Schema(
     role:          { type: String, enum: ["user", "admin"], default: "user" },
     avatar:        { type: String, default: "" },
     targetRole:    { type: String, default: "" },
+    targetCompanies: [{ type: String }],
     skills:        [{ type: String }],
     bio:           { type: String, default: "" },
+    dsaLevel:        { type: String, enum: ["Beginner", "Intermediate", "Advanced"], default: "Beginner" },
+    interviewLevel:  { type: String, enum: ["Easy", "Medium", "Hard"], default: "Medium" },
     // OTP fields
     otp:           { type: String, select: false },
     otpExpires:    { type: Date,   select: false },

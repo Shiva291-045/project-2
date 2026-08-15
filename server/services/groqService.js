@@ -11,6 +11,7 @@
  */
 
 import Groq from "groq-sdk";
+import { DSA_TOPICS, getCompanyFocus } from "../data/roleCompanyData.js";
 
 const GROQ_MODEL      = "llama-3.3-70b-versatile";
 const GROQ_MODEL_FAST = "llama-3.1-8b-instant"; // for simple/fast calls
@@ -186,8 +187,18 @@ export const runInterviewTurn = async (messages, systemPrompt) => {
    Used by: POST /api/interview/session/start
    Generates a role/mode/difficulty-appropriate first question.
 ═══════════════════════════════════════════════════════════════════════════════ */
-export const generateOpeningQuestion = async ({ mode, role, difficulty }) => {
-  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company, about to start a ${difficulty.toLowerCase()}-level interview for a ${role} position.
+export const generateOpeningQuestion = async ({ mode, role, difficulty, company, resumeContext, weakTopics }) => {
+  const companyLine = company
+    ? `\nTarget company: ${company}. Match this company's typical interview style/focus where relevant.`
+    : "";
+  const resumeLine = resumeContext
+    ? `\nCandidate's resume highlights: ${resumeContext}. Feel free to open with something grounded in their actual background rather than a generic question.`
+    : "";
+  const weakLine = weakTopics?.length
+    ? `\nThe candidate has marked these areas as weaker in their DSA practice: ${weakTopics.join(", ")}. Keep this in mind for later questions, not necessarily the opener.`
+    : "";
+
+  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company, about to start a ${difficulty.toLowerCase()}-level interview for a ${role} position.${companyLine}${resumeLine}${weakLine}
 
 Generate ONE strong opening question — the kind a real interviewer would ask to start the conversation and get the candidate talking. It should be role-appropriate and match the requested difficulty and interview type (${mode}).
 
@@ -219,37 +230,58 @@ export const runAdaptiveInterviewTurn = async ({
   lastQuestion, lastTopic, answer,
   askedQuestions, topicsCovered,
   questionNumber, targetQuestions,
+  questionsOnCurrentTopic, company, resumeContext, weakTopics,
 }) => {
   const isLastQuestion = questionNumber >= targetQuestions;
   const historyList = askedQuestions.length
     ? askedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
     : "(none yet)";
 
-  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company conducting a structured interview for a ${role} position.
+  // Topic-mastery gating: don't bounce to a new topic after just one
+  // question. Only allow a topic switch once the current topic has had at
+  // least 2 questions, UNLESS the candidate's answer was a strong signal
+  // (very high or very low score) that the topic is already well evaluated.
+  const topicGate = questionsOnCurrentTopic < 2
+    ? `You have only asked ${questionsOnCurrentTopic} question(s) on the current topic ("${lastTopic}") — stay on this topic with a deeper follow-up UNLESS the last answer was a 9-10 (mastered, move on) or a 0-2 (fundamental gap, worth confirming once more before moving on).`
+    : `The current topic ("${lastTopic}") has been reasonably evaluated (${questionsOnCurrentTopic} questions asked) — you may move to a new topic now, or stay if there's clearly more to probe.`;
+
+  const companyLine = company
+    ? `\nTarget company: ${company}. Lean into this company's typical interview style/focus where it fits naturally.`
+    : "";
+  const resumeLine = resumeContext
+    ? `\nCandidate's resume highlights: ${resumeContext}.`
+    : "";
+  const weakLine = weakTopics?.length
+    ? `\nThe candidate is weaker in these DSA areas per their own practice history: ${weakTopics.join(", ")}. Where it fits the flow of the interview, you may probe a concept from one of these — but don't force it if the conversation is going somewhere more valuable.`
+    : "";
+
+  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company conducting a structured interview for a ${role} position.${companyLine}${resumeLine}${weakLine}
 
 CONTEXT:
 - Current difficulty: ${difficulty}
 - Next question's target difficulty: ${nextDifficulty}
 - Question ${questionNumber} of ${targetQuestions}
 - Topics already covered: ${topicsCovered.length ? topicsCovered.join(", ") : "none yet"}
+- ${topicGate}
 - Questions already asked (NEVER repeat any of these, even reworded):
 ${historyList}
 
 YOUR TASK — evaluate the candidate's answer to the last question, then produce the next question:
 1. Score the answer honestly from 0-10 based on correctness, depth, specificity, and communication.
-2. Give constructive, specific feedback (2-3 sentences) — not generic praise.
+2. Give constructive, specific feedback (2-3 sentences) — not generic praise. If the answer only partially addressed the question, say what was missing.
 3. Generate ONE next question that:
    - Is COMPLETELY DIFFERENT from every question already asked above
-   - Is a smart follow-up: if the answer was vague, ask for a concrete example or dig deeper on the same topic; if strong, escalate to a harder or more nuanced angle; if it revealed a gap, probe that gap; if off-topic, redirect naturally
+   - Is a smart follow-up grounded in what they JUST said: if vague, ask for a concrete example or dig deeper on the same concept; if strong, escalate to a harder or more nuanced angle of the SAME topic first (per the topic-mastery guidance above) before broadening; if it revealed a specific misconception, probe that exact misconception; if off-topic, redirect naturally
    - Matches the target difficulty "${nextDifficulty}"
-   - ${isLastQuestion ? "This is the FINAL question — make it a strong closing question that wraps up the interview well." : "Ideally introduces a new topic/angle to maximize topic coverage across the interview, unless a follow-up on the current topic is clearly more valuable."}
+   - ${isLastQuestion ? "This is the FINAL question — make it a strong closing question that wraps up the interview well." : "Follows the topic-mastery guidance above rather than jumping topics every single turn."}
 
 Respond with ONLY valid JSON:
 {
   "score": <integer 0-10>,
   "feedback": "<2-3 sentence honest, specific feedback on their answer>",
   "nextQuestion": "<the next interview question>",
-  "nextTopic": "<short topic label for the next question>"
+  "nextTopic": "<short topic label for the next question — reuse the SAME label as lastTopic if staying on-topic>",
+  "topicChanged": <true if nextTopic is a genuinely new topic vs lastTopic, false if it's a follow-up on the same topic>
 }`;
 
   const userMessage = `Last question asked ("${lastTopic}" topic): ${lastQuestion}\n\nCandidate's answer: ${answer}`;
@@ -273,13 +305,17 @@ Respond with ONLY valid JSON:
     feedback:     parsed.feedback || "",
     nextQuestion: parsed.nextQuestion,
     nextTopic:    parsed.nextTopic || "General",
+    topicChanged: parsed.topicChanged !== false && parsed.nextTopic !== lastTopic,
   };
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    INTERVIEW SESSION — FINAL REPORT
    Used by: interview session completion (auto or manual end)
-   Produces a detailed performance report from the full Q&A history.
+   Produces a detailed performance report from the full Q&A history, including
+   a technical/communication/problem-solving breakdown and a pointer back to
+   the existing 450-question DSA set (by topic label, not new questions) for
+   whatever came out weakest.
 ═══════════════════════════════════════════════════════════════════════════════ */
 export const generateInterviewReport = async ({ mode, role, qa }) => {
   const transcript = qa.map((item, i) =>
@@ -288,15 +324,19 @@ export const generateInterviewReport = async ({ mode, role, qa }) => {
 
   const systemPrompt = `You are a senior technical recruiter producing a final performance report for a candidate who just completed a ${mode} interview for a ${role} position.
 
-Analyze the FULL transcript below — all questions, answers, and per-question scores — and produce an honest, detailed, specific report. Do not be generic; reference actual topics and answers from the transcript.
+Analyze the FULL transcript below — all questions, answers, and per-question scores — and produce an honest, detailed, specific report. Do not be generic; reference actual topics and answers from the transcript. Every score must be justified by what's actually in the transcript — never invent strong performance that isn't there.
 
 Respond with ONLY valid JSON matching this EXACT structure:
 {
   "overallScore": <integer 0-100, weighted holistic assessment — not just the average of per-question scores>,
+  "technicalScore": <integer 0-100, technical/domain correctness and depth specifically>,
+  "communicationScore": <integer 0-100, clarity, structure, and how well they explained their thinking>,
+  "problemSolvingScore": <integer 0-100, approach, reasoning process, handling of follow-ups and edge cases>,
   "strengths": ["<specific strength grounded in an actual answer>", "<specific strength>", "<specific strength>"],
   "weaknesses": ["<specific weakness grounded in an actual answer>", "<specific weakness>", "<specific weakness>"],
   "suggestions": ["<actionable improvement suggestion>", "<actionable improvement suggestion>", "<actionable improvement suggestion>"],
   "topicBreakdown": {"<topic name>": <average score 0-10 for that topic>, ...},
+  "recommendedDsaTopics": ["<pick 1-3 topics ONLY from this exact list, whichever best matches the weaknesses shown: ${DSA_TOPICS.join(", ")}>"],
   "summary": "<3-4 sentence honest overall assessment of interview performance and hire-readiness>"
 }`;
 
@@ -314,11 +354,23 @@ Respond with ONLY valid JSON matching this EXACT structure:
     throw new Error("AI failed to generate the performance report. Please try again.");
   }
 
-  parsed.overallScore = clamp(parsed.overallScore);
+  parsed.overallScore        = clamp(parsed.overallScore);
+  parsed.technicalScore      = typeof parsed.technicalScore      === "number" ? clamp(parsed.technicalScore)      : null;
+  parsed.communicationScore  = typeof parsed.communicationScore  === "number" ? clamp(parsed.communicationScore)  : null;
+  parsed.problemSolvingScore = typeof parsed.problemSolvingScore === "number" ? clamp(parsed.problemSolvingScore) : null;
+
   ["strengths", "weaknesses", "suggestions"].forEach(k => {
     if (!Array.isArray(parsed[k])) parsed[k] = [];
   });
   if (!parsed.topicBreakdown || typeof parsed.topicBreakdown !== "object") parsed.topicBreakdown = {};
+
+  // Only keep recommendations that are actually in the real DSA topic list —
+  // never let the model invent a topic name that doesn't map to anything
+  // the user can go practice.
+  parsed.recommendedDsaTopics = Array.isArray(parsed.recommendedDsaTopics)
+    ? parsed.recommendedDsaTopics.filter(t => DSA_TOPICS.includes(t))
+    : [];
+
   parsed.summary = parsed.summary || "";
 
   return parsed;
@@ -386,10 +438,17 @@ or
    Used by: POST /api/resume/analyze (step 2 — only after validation passes)
    Returns: Full ATS analysis object
 ═══════════════════════════════════════════════════════════════════════════════ */
-export const analyzeResume = async (extractedText, fileName, targetRole = "") => {
+export const analyzeResume = async (extractedText, fileName, targetRole = "", targetCompany = "") => {
   const roleInstruction = targetRole
     ? `\n\nTARGET ROLE: The candidate is applying for "${targetRole}" positions. Tailor "missingKeywords" to skills/keywords expected for THIS specific role that are absent from the resume, tailor "suggestions" to close the gap toward this role, and factor role-fit into "summary" and "overallFeedback".`
     : `\n\nNo target role was specified — infer the most likely role from the resume content itself and base "missingKeywords"/"suggestions" on that inferred role.`;
+
+  const companyMeta = targetCompany ? getCompanyFocus(targetCompany) : null;
+  const companyInstruction = companyMeta
+    ? `\n\nTARGET COMPANY: The candidate is applying to ${targetCompany}, which typically emphasizes: ${companyMeta.focus.join(", ")} (${companyMeta.style}). Where relevant, nudge "suggestions" toward strengthening these areas — but never fabricate experience or claim the candidate has skills they haven't demonstrated.`
+    : targetCompany
+      ? `\n\nTARGET COMPANY: The candidate mentioned "${targetCompany}" — no specific profile on file for this company, so just use general best practices for a company at this tier.`
+      : "";
 
   const systemPrompt = `You are an expert ATS (Applicant Tracking System) resume analyzer and senior technical recruiter with 20+ years at top tech companies (Google, Meta, Amazon).
 
@@ -409,7 +468,7 @@ SKILL EXTRACTION RULES:
 
 SECTION PARSING:
 - Identify these sections and whether each is present in the resume: Name, Skills, Education, Experience, Projects, Certifications
-- Extract the candidate's full name if present at the top of the document${roleInstruction}
+- Extract the candidate's full name if present at the top of the document${roleInstruction}${companyInstruction}
 
 Respond with ONLY valid JSON matching this EXACT structure:
 {

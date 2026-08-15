@@ -367,7 +367,7 @@ export const getMe = async (req, res) => {
 // ── PUT /api/auth/profile ─────────────────────────────────────────────────────
 export const updateProfile = async (req, res) => {
   try {
-    const allowed = ["name", "targetRole", "skills", "bio", "avatar"];
+    const allowed = ["name", "targetRole", "targetCompanies", "skills", "bio", "avatar", "dsaLevel", "interviewLevel"];
 
     const updates = {};
 
