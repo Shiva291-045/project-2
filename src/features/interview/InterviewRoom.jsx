@@ -224,6 +224,26 @@ const SetupScreen = ({ onStart }) => {
     return () => { cancelled = true; };
   }, []);
 
+  // Known company focus-area config — fetched from the SAME data the
+  // backend already uses to personalize questions (server/data/
+  // roleCompanyData.js), not duplicated client-side. Used for a light
+  // autocomplete + an info panel showing what a company's interviews
+  // tend to emphasize once the typed name matches a known one.
+  const [knownCompanies, setKnownCompanies] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/api/interview/companies");
+        if (!cancelled) setKnownCompanies(data?.data?.companies || []);
+      } catch {
+        // Non-critical — company field still works as free text without this
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const companyInfo = knownCompanies.find(c => c.name.toLowerCase() === company.trim().toLowerCase());
+
   return (
     <PageWrapper>
       <div className="max-w-2xl mx-auto w-full px-1 pb-12">
@@ -344,8 +364,24 @@ const SetupScreen = ({ onStart }) => {
             value={company}
             onChange={e => setCompany(e.target.value)}
             placeholder="e.g. Amazon, Google, TCS — matches their typical interview style"
+            list="known-companies"
             className="w-full px-4 py-2.5 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all text-sm"
           />
+          <datalist id="known-companies">
+            {knownCompanies.map(c => <option key={c.name} value={c.name} />)}
+          </datalist>
+
+          {companyInfo && (
+            <div className="mt-3 p-3 rounded-xl bg-brand-500/10 border border-brand-500/20">
+              <p className="text-xs text-brand-300 font-medium mb-1.5">{companyInfo.name} interviews typically emphasize:</p>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {companyInfo.focus.map(f => (
+                  <span key={f} className="text-[11px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-200">{f}</span>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500">{companyInfo.style}</p>
+            </div>
+          )}
         </motion.section>
 
         {/* ── 4. Start Button — always the last block, always below everything ── */}

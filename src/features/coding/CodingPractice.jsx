@@ -15,11 +15,12 @@ import { PageWrapper } from "../../components/PageWrapper";
 import {
   CheckCircle, Play, ExternalLink, RotateCcw, Search,
   BookOpen, X, ChevronRight, ArrowLeft, List, Code2,
-  Filter, LayoutGrid,
+  Filter, LayoutGrid, Target,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../services/apiClient";
 import rawData from "../../data/450DSA.json";
+import { getWeakTopics } from "../../utils/dsaRecommendations";
 
 /* ── CodeMirror language map ─────────────────────────────────────────────── */
 const CM_LANG = {
@@ -148,7 +149,7 @@ const getSolved  = () => { try { return new Set(JSON.parse(localStorage.getItem(
 const saveSolved = (s) => localStorage.setItem(SOLVED_KEY, JSON.stringify([...s]));
 
 // ── Topic grid card ───────────────────────────────────────────────────────
-const TopicCard = ({ topic, problems, solvedCount, onClick }) => {
+const TopicCard = ({ topic, problems, solvedCount, onClick, isWeak }) => {
   const meta  = TOPIC_META[topic] || DEFAULT_META;
   const total = problems.length;
   const pct   = total ? Math.round((solvedCount / total) * 100) : 0;
@@ -159,7 +160,9 @@ const TopicCard = ({ topic, problems, solvedCount, onClick }) => {
   return (
     <button
       onClick={() => onClick(topic)}
-      className="group text-left w-full rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200 overflow-hidden hover:scale-[1.01]"
+      className={`group text-left w-full rounded-2xl border bg-white dark:bg-gray-800 hover:shadow-lg transition-all duration-200 overflow-hidden hover:scale-[1.01] ${
+        isWeak ? "border-amber-400/50 dark:border-amber-500/40" : "border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-600"
+      }`}
     >
       {/* Gradient top strip */}
       <div className={`h-2 w-full bg-gradient-to-r ${meta.color}`} />
@@ -169,7 +172,10 @@ const TopicCard = ({ topic, problems, solvedCount, onClick }) => {
           <div className="flex items-center gap-3">
             <span className="text-2xl">{meta.emoji}</span>
             <div>
-              <h3 className="font-bold text-gray-900 dark:text-white text-sm leading-tight">{topic}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-gray-900 dark:text-white text-sm leading-tight">{topic}</h3>
+                {isWeak && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 dark:text-amber-400">Focus</span>}
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">{total} problems</p>
             </div>
           </div>
@@ -211,6 +217,7 @@ export const CodingPractice = () => {
   const [search,      setSearch]      = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [difficulty,  setDifficulty]  = useState("All");
+  const [solvedFilter, setSolvedFilter] = useState("All"); // "All" | "Solved" | "Unsolved"
 
   const [code,        setCode]        = useState(STARTER["javascript"]);
   const [language,    setLanguage]    = useState("javascript");
@@ -239,9 +246,15 @@ export const CodingPractice = () => {
       const matchTopic = p.topic === selTopic;
       const matchDiff  = difficulty === "All" || p.difficulty === difficulty;
       const matchSearch = !search || p.title.toLowerCase().includes(search.toLowerCase());
-      return matchTopic && matchDiff && matchSearch;
+      const matchSolved = solvedFilter === "All" || (solvedFilter === "Solved" ? solved.has(p.id) : !solved.has(p.id));
+      return matchTopic && matchDiff && matchSearch && matchSolved;
     });
-  }, [selTopic, difficulty, search]);
+  }, [selTopic, difficulty, search, solvedFilter, solved]);
+
+  // Weak topics — reuses the shared dsaRecommendations logic (same
+  // 450-question dataset + solved set) so this stays consistent with the
+  // weak-topic data already shown on the Dashboard and fed to AI Interview.
+  const weakTopics = useMemo(() => getWeakTopics(solved, 3), [solved]);
 
   // Global summary stats
   const globalStats = useMemo(() => ({
@@ -356,6 +369,48 @@ export const CodingPractice = () => {
               </div>
             </div>
 
+            {/* Weak Topics + Recommended Problems */}
+            {weakTopics.length > 0 && (() => {
+              const hasAnyProgress = globalStats.solved > 0;
+              return (
+                <div className="glass rounded-2xl border border-amber-500/20 p-5 mb-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Target className="w-4 h-4 text-amber-400" />
+                    <h3 className="font-display font-bold text-white text-sm">
+                      {hasAnyProgress ? "Weak Topics — Focus Here Next" : "Recommended Starting Points"}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-4">
+                    {hasAnyProgress
+                      ? "Based on your lowest solve rate among topics you've started. Tap one to jump straight to unsolved problems."
+                      : "You haven't solved any problems yet — these topics have the most practice available. Tap one to start."}
+                  </p>
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    {weakTopics.map((wt) => {
+                      const meta = TOPIC_META[wt.topic] || DEFAULT_META;
+                      return (
+                        <button
+                          key={wt.topic}
+                          onClick={() => { setSelTopic(wt.topic); setDifficulty("All"); setSearch(""); setSearchInput(""); setSolvedFilter("Unsolved"); setView("problems"); }}
+                          className="text-left p-3 rounded-xl bg-surface-elevated border border-amber-500/15 hover:border-amber-500/40 transition-all group"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-lg">{meta.emoji}</span>
+                            <span className="text-sm font-semibold text-white flex-1 truncate">{wt.topic}</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                          </div>
+                          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-1">
+                            <div className="h-full rounded-full bg-amber-500" style={{ width: `${wt.percent}%` }} />
+                          </div>
+                          <p className="text-[11px] text-gray-500">{wt.solved}/{wt.total} solved ({wt.percent}%)</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Topic grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {topics.map((topic) => (
@@ -364,7 +419,8 @@ export const CodingPractice = () => {
                   topic={topic}
                   problems={topicStats[topic]?.problems || []}
                   solvedCount={topicStats[topic]?.solvedCount || 0}
-                  onClick={(t) => { setSelTopic(t); setDifficulty("All"); setSearch(""); setSearchInput(""); setView("problems"); }}
+                  isWeak={weakTopics.some(wt => wt.topic === topic)}
+                  onClick={(t) => { setSelTopic(t); setDifficulty("All"); setSearch(""); setSearchInput(""); setSolvedFilter("All"); setView("problems"); }}
                 />
               ))}
             </div>
@@ -409,6 +465,30 @@ export const CodingPractice = () => {
                   )}
                 </div>
 
+                {/* Topic switcher — jump to another topic without going back */}
+                <select
+                  value={selTopic}
+                  onChange={(e) => { setSelTopic(e.target.value); setSearch(""); setSearchInput(""); }}
+                  className="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {topics.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+
+                {/* Solved / Unsolved filter */}
+                <div className="flex gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-1">
+                  {["All", "Unsolved", "Solved"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSolvedFilter(s)}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                        solvedFilter === s ? "bg-purple-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Difficulty filter */}
                 <div className="flex gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-1">
                   {["All", "Easy", "Medium", "Hard"].map((d) => (
@@ -443,7 +523,7 @@ export const CodingPractice = () => {
                   <div className="py-16 text-center text-gray-400">
                     <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p>No problems match your filters.</p>
-                    <button onClick={() => { setDifficulty("All"); setSearch(""); setSearchInput(""); }} className="text-purple-500 text-sm mt-2 hover:underline">
+                    <button onClick={() => { setDifficulty("All"); setSearch(""); setSearchInput(""); setSolvedFilter("All"); }} className="text-purple-500 text-sm mt-2 hover:underline">
                       Clear filters
                     </button>
                   </div>

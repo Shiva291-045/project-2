@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { PageWrapper } from "../../components/PageWrapper";
 import { Button, Alert } from "../../components/ui";
@@ -29,6 +29,24 @@ export const Profile = () => {
   const [companyInput, setCompanyInput] = useState("");
   const [saving, setSaving]     = useState(false);
   const [saved,  setSaved]      = useState(false);
+
+  // Same company-focus config the interview/resume personalization already
+  // uses server-side — fetched here (not duplicated) so an added target
+  // company can show what its interviews tend to emphasize.
+  const [knownCompanies, setKnownCompanies] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/api/interview/companies");
+        if (!cancelled) setKnownCompanies(data?.data?.companies || []);
+      } catch {
+        // Non-critical — companies still save/display fine without this
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const companyInfoFor = (name) => knownCompanies.find(c => c.name.toLowerCase() === name.toLowerCase());
 
   const toggleSkill = (skill) => setForm(f => ({
     ...f,
@@ -191,6 +209,23 @@ export const Profile = () => {
               ))}
               {!form.targetCompanies.length && <p className="text-xs text-gray-600">No companies added yet.</p>}
             </div>
+            {form.targetCompanies.some(c => companyInfoFor(c)) && (
+              <div className="mt-4 space-y-2">
+                {form.targetCompanies.map(c => {
+                  const info = companyInfoFor(c);
+                  if (!info) return null;
+                  return (
+                    <div key={c} className="p-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.08)]">
+                      <p className="text-xs font-medium text-gray-300 mb-1">{info.name} focus areas:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {info.focus.map(f => <span key={f} className="text-[11px] px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300">{f}</span>)}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1.5">{info.style}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Prep levels */}

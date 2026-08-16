@@ -230,7 +230,7 @@ export const runAdaptiveInterviewTurn = async ({
   lastQuestion, lastTopic, answer,
   askedQuestions, topicsCovered,
   questionNumber, targetQuestions,
-  questionsOnCurrentTopic, company, resumeContext, weakTopics,
+  questionsOnCurrentTopic, company, resumeContext, weakTopics, recentHistory,
 }) => {
   const isLastQuestion = questionNumber >= targetQuestions;
   const historyList = askedQuestions.length
@@ -255,7 +255,16 @@ export const runAdaptiveInterviewTurn = async ({
     ? `\nThe candidate is weaker in these DSA areas per their own practice history: ${weakTopics.join(", ")}. Where it fits the flow of the interview, you may probe a concept from one of these — but don't force it if the conversation is going somewhere more valuable.`
     : "";
 
-  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company conducting a structured interview for a ${role} position.${companyLine}${resumeLine}${weakLine}
+  // Short-term conversational memory: a couple of already-graded exchanges
+  // BEFORE the one just answered. This lets a follow-up meaningfully
+  // reference something said a turn or two ago (e.g. spotting a
+  // contradiction, or connecting two related answers) rather than only
+  // ever reacting to the single most recent message.
+  const recentLine = recentHistory?.length
+    ? `\nRecent conversation before this (for context/continuity — do not re-ask these):\n${recentHistory.map(h => `- [${h.topic}, scored ${h.score}/10] Q: ${h.question} | A: ${h.answer}`).join("\n")}`
+    : "";
+
+  const systemPrompt = `You are an expert ${mode} interviewer at a top tech company conducting a structured interview for a ${role} position.${companyLine}${resumeLine}${weakLine}${recentLine}
 
 CONTEXT:
 - Current difficulty: ${difficulty}
@@ -271,7 +280,7 @@ YOUR TASK — evaluate the candidate's answer to the last question, then produce
 2. Give constructive, specific feedback (2-3 sentences) — not generic praise. If the answer only partially addressed the question, say what was missing.
 3. Generate ONE next question that:
    - Is COMPLETELY DIFFERENT from every question already asked above
-   - Is a smart follow-up grounded in what they JUST said: if vague, ask for a concrete example or dig deeper on the same concept; if strong, escalate to a harder or more nuanced angle of the SAME topic first (per the topic-mastery guidance above) before broadening; if it revealed a specific misconception, probe that exact misconception; if off-topic, redirect naturally
+   - Is a smart follow-up grounded in what they JUST said, and where relevant, consistent with the recent conversation above: if vague, ask for a concrete example or dig deeper on the same concept; if strong, escalate to a harder or more nuanced angle of the SAME topic first (per the topic-mastery guidance above) before broadening; if it revealed a specific misconception, probe that exact misconception; if it contradicts something said earlier, gently probe the inconsistency; if off-topic, redirect naturally
    - Matches the target difficulty "${nextDifficulty}"
    - ${isLastQuestion ? "This is the FINAL question — make it a strong closing question that wraps up the interview well." : "Follows the topic-mastery guidance above rather than jumping topics every single turn."}
 
@@ -288,6 +297,7 @@ Respond with ONLY valid JSON:
 
   const raw = await chatCompletion(
     [
+
       { role: "system", content: systemPrompt },
       { role: "user",   content: userMessage  },
     ],
@@ -376,12 +386,37 @@ Respond with ONLY valid JSON matching this EXACT structure:
   return parsed;
 };
 
+/* ─── Lightweight heuristic backstop for resume validation ──────────────────
+   The AI call below is the primary judge, but LLM judgment on a single,
+   low-token-budget call can occasionally be too lenient on borderline
+   documents (e.g. a cover letter, a LinkedIn "About" export). This keyword/
+   structure heuristic is a cheap second signal — it never approves a
+   document by itself, it only ever tightens an "isResume: true" verdict
+   that has essentially no resume-like structure at all, which is a much
+   safer failure mode than silently producing a misleading ATS score.
+─────────────────────────────────────────────────────────────────────────── */
+const RESUME_SIGNAL_KEYWORDS = [
+  "experience", "education", "skills", "project", "certification", "university",
+  "college", "bachelor", "master", "internship", "objective", "summary",
+  "achievement", "responsibilities", "linkedin", "github", "portfolio", "references",
+];
+
+const heuristicResumeSignal = (text) => {
+  const lower = text.toLowerCase();
+  const hasEmail    = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(text);
+  const hasPhone    = /(\+?\d[\d\s().-]{8,}\d)/.test(text);
+  const keywordHits = RESUME_SIGNAL_KEYWORDS.filter(k => lower.includes(k)).length;
+  return { hasEmail, hasPhone, keywordHits };
+};
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESUME VALIDATION
    Used by: POST /api/resume/analyze (step 1)
    Returns: { isResume: boolean, reason: string }
 ═══════════════════════════════════════════════════════════════════════════════ */
 export const validateResume = async (extractedText) => {
+  const signal = heuristicResumeSignal(extractedText);
+
   const systemPrompt = `You are an ATS Resume Validator. Your only job is to determine whether a document is a genuine resume/CV.
 
 A valid resume contains sections such as: contact information, education, skills, work experience, projects, certifications, or professional summary.
@@ -397,16 +432,20 @@ Reject these as NOT a resume:
 - Medical records, prescriptions
 - Legal documents, contracts
 - News articles, blog posts
+- Cover letters, recommendation letters, or other job-application documents that are NOT the resume itself
 - Any document clearly not a professional resume/CV
 
+A quick automated scan of this document found: ${signal.keywordHits} resume-related keyword(s) (experience/education/skills/etc.), contact email ${signal.hasEmail ? "present" : "not found"}, phone number ${signal.hasPhone ? "present" : "not found"}. Weigh this alongside your own reading of the content — don't rely on it alone, a resume can occasionally lack a phone number, but treat near-zero signal as a strong reason for extra scrutiny.
+
 Respond with ONLY valid JSON, no explanation, no markdown:
-{"isResume": true, "reason": "Contains education, skills, and work experience sections"}
+{"isResume": true, "reason": "Contains education, skills, and work experience sections", "confidence": "high"}
 or
-{"isResume": false, "reason": "This appears to be a class assignment, not a resume"}`;
+{"isResume": false, "reason": "This appears to be a class assignment, not a resume", "confidence": "high"}
+(confidence is "high", "medium", or "low" — use "low" for genuinely ambiguous or borderline documents)`;
 
   const userMessage = `Analyze this document and determine if it is a genuine resume/CV:\n\n---\n${extractedText.slice(0, 3000)}\n---`;
 
-  console.log(`[Groq Resume] Validating document (${extractedText.length} chars)...`);
+  console.log(`[Groq Resume] Validating document (${extractedText.length} chars, ${signal.keywordHits} keyword hits, email=${signal.hasEmail}, phone=${signal.hasPhone})...`);
 
   const raw = await chatCompletion(
     [
@@ -418,7 +457,7 @@ or
       retries:     2,
       timeoutMs:   25000,
       jsonMode:    true,
-      maxTokens:   150,
+      maxTokens:   200,
       temperature: 0.1,
     }
   );
@@ -429,7 +468,21 @@ or
     throw new Error("AI validation returned unexpected response. Please try again.");
   }
 
-  console.log(`[Groq Resume] Validation: isResume=${parsed.isResume}, reason="${parsed.reason}"`);
+  // Heuristic backstop: if the AI approved the document but an automated
+  // scan finds essentially nothing resume-like about it (no contact info
+  // AND at most one resume-related keyword), don't trust that verdict —
+  // override to rejected rather than risk producing a misleading ATS score
+  // for something that clearly isn't a resume. This only ever tightens an
+  // approval; it never overrides a rejection.
+  if (parsed.isResume && !signal.hasEmail && !signal.hasPhone && signal.keywordHits <= 1) {
+    console.warn(`[Groq Resume] Overriding AI approval — heuristic scan found no resume structure (keywords=${signal.keywordHits}, email=${signal.hasEmail}, phone=${signal.hasPhone})`);
+    return {
+      isResume: false,
+      reason: "This document doesn't contain the sections a resume normally has (contact info, experience, education, or skills). Please upload an actual resume/CV.",
+    };
+  }
+
+  console.log(`[Groq Resume] Validation: isResume=${parsed.isResume}, confidence=${parsed.confidence || "n/a"}, reason="${parsed.reason}"`);
   return parsed;
 };
 

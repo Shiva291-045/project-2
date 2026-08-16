@@ -2,6 +2,7 @@ import Interview from "../models/Interview.js";
 import User      from "../models/User.js";
 import * as resp from "../utils/apiResponse.js";
 import { runInterviewTurn } from "../services/groqService.js";
+import { COMPANY_FOCUS } from "../data/roleCompanyData.js";
 
 /* ─── POST /api/interview/save ──────────────────────────────────────────────── */
 export const saveInterview = async (req, res) => {
@@ -111,4 +112,14 @@ export const aiProxy = async (req, res) => {
 
     return resp.error(res, "AI service error. Please try again.", 500);
   }
+};
+
+// ── GET /api/interview/companies ────────────────────────────────────────────
+// Exposes the SAME company-focus config already used server-side to
+// personalize interview questions and resume gap analysis — reused here
+// verbatim (not duplicated) so the frontend can show "why" a company was
+// selected without maintaining its own copy of this data.
+export const getCompanies = async (req, res) => {
+  const companies = Object.entries(COMPANY_FOCUS).map(([name, meta]) => ({ name, ...meta }));
+  return resp.success(res, { companies });
 };

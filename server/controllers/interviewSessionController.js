@@ -90,6 +90,28 @@ const toQaLog = (qa) => qa.map(q => ({
   difficulty: q.difficulty, score: q.score, feedback: q.feedback,
 }));
 
+// The score of the most recently ALREADY-GRADED question, excluding the one
+// currently being answered (which has no score yet at the point this is
+// called). Used to nudge next-question difficulty off real, known
+// performance — using the current (unscored) entry here would always be
+// null/undefined and silently disable the performance-based nudge.
+const mostRecentGradedScore = (qa) => {
+  for (let i = qa.length - 2; i >= 0; i--) {
+    if (typeof qa[i].score === "number") return qa[i].score;
+  }
+  return null;
+};
+
+// Last N already-graded Q&A pairs before the current one — gives the model
+// short-term conversational memory beyond just "don't repeat this question",
+// so follow-ups can meaningfully reference what was discussed a turn or two
+// ago, not only the immediately preceding answer.
+const recentGradedHistory = (qa, n = 2) => qa
+  .slice(0, -1)
+  .filter(q => typeof q.score === "number")
+  .slice(-n)
+  .map(q => ({ question: q.question, answer: q.answer, topic: q.topic, score: q.score }));
+
 /* ─── POST /api/interview/session/start ─────────────────────────────────────
    body: { mode, role, difficulty, duration (minutes) }
 ──────────────────────────────────────────────────────────────────────────── */
@@ -186,6 +208,7 @@ export const submitAnswer = async (req, res) => {
           questionNumber, targetQuestions: session.targetQuestions,
           questionsOnCurrentTopic: countQuestionsOnCurrentTopic(session.qa, current.topic),
           company: session.company, weakTopics: session.weakTopics,
+          recentHistory: recentGradedHistory(session.qa),
         });
       } catch (err) {
         return handleGroqError(res, err, "Failed to score your final answer. Please try again.");
@@ -226,12 +249,13 @@ export const submitAnswer = async (req, res) => {
       turn = await runAdaptiveInterviewTurn({
         mode: session.mode, role: session.role,
         difficulty: current.difficulty,
-        nextDifficulty: nextDifficultyFromPerformance(baseNext, current.score),
+        nextDifficulty: nextDifficultyFromPerformance(baseNext, mostRecentGradedScore(session.qa)),
         lastQuestion: current.question, lastTopic: current.topic, answer: current.answer,
         askedQuestions, topicsCovered: session.topicsCovered,
         questionNumber, targetQuestions: session.targetQuestions,
         questionsOnCurrentTopic: countQuestionsOnCurrentTopic(session.qa, current.topic),
         company: session.company, weakTopics: session.weakTopics,
+        recentHistory: recentGradedHistory(session.qa),
       });
     } catch (err) {
       return handleGroqError(res, err, "AI failed to generate the next question. Please try again.");
