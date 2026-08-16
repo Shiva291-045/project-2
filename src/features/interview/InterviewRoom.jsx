@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { withRetry } from "../../services/apiClient";
+import { getWeakTopics } from "../../utils/dsaRecommendations";
 
 /* ─── Interview Modes ──────────────────────────────────────────── */
 const MODES = [
@@ -55,6 +56,7 @@ const ROLES = [
 const startInterviewSession = async (config) => {
   const fn = () => api.post("/api/interview/session/start", {
     mode: config.mode, role: config.role, difficulty: config.difficulty, duration: config.duration,
+    company: config.company || "", weakTopics: config.weakTopics || [],
   });
   const { data } = await withRetry(fn, 2, 1000);
   return data?.data;
@@ -193,6 +195,34 @@ const SetupScreen = ({ onStart }) => {
   const [difficulty, setDifficulty] = useState("Medium");
   const [duration,   setDuration]   = useState(10);
   const [role,       setRole]       = useState("Software Engineer");
+  const [company,    setCompany]    = useState("");
+  const { userProfile } = useAuth();
+
+  // Pre-fill from the user's saved profile (target role / first target
+  // company) if they've set one — still fully editable per-session.
+  useEffect(() => {
+    if (userProfile?.targetRole) setRole(userProfile.targetRole);
+    if (userProfile?.targetCompanies?.length) setCompany(userProfile.targetCompanies[0]);
+  }, [userProfile]);
+
+  // Weak DSA topics, computed client-side from the same 450-question
+  // dataset + solved-problem list the Coding page and Dashboard use — sent
+  // along at session start so the interviewer can (lightly) probe them.
+  const [weakTopics, setWeakTopics] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/api/coding/solved");
+        if (cancelled) return;
+        const solvedIds = data?.data?.solvedIds || [];
+        setWeakTopics(getWeakTopics(solvedIds, 3).map(t => t.topic));
+      } catch {
+        // Non-critical — interview still works without weak-topic context
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <PageWrapper>
@@ -301,6 +331,23 @@ const SetupScreen = ({ onStart }) => {
           <RoleSelector value={role} onChange={setRole} />
         </motion.section>
 
+        {/* ── 3b. Target Company (optional) ── */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.19 }}
+          className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)] mb-4"
+        >
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            Target Company <span className="normal-case font-normal text-gray-600">(optional)</span>
+          </h3>
+          <input
+            value={company}
+            onChange={e => setCompany(e.target.value)}
+            placeholder="e.g. Amazon, Google, TCS — matches their typical interview style"
+            className="w-full px-4 py-2.5 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all text-sm"
+          />
+        </motion.section>
+
         {/* ── 4. Start Button — always the last block, always below everything ── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
@@ -310,7 +357,7 @@ const SetupScreen = ({ onStart }) => {
             variant="primary"
             size="xl"
             className="w-full shadow-brand-lg"
-            onClick={() => onStart({ mode, difficulty, duration, role })}
+            onClick={() => onStart({ mode, difficulty, duration, role, company, weakTopics })}
           >
             <Brain className="w-5 h-5" />
             Start Interview Session
@@ -392,7 +439,7 @@ const InterviewSession = ({ config, onEnd }) => {
 
     const avgScore = finalScores.length ? finalScores.reduce((a, b) => a + b, 0) / finalScores.length : 0;
     const session = {
-      mode: config.mode, difficulty: config.difficulty, role: config.role,
+      mode: config.mode, difficulty: config.difficulty, role: config.role, company: config.company,
       duration: config.duration, scores: finalScores, avgScore,
       questionsAnswered,
       sessionId,
@@ -406,12 +453,14 @@ const InterviewSession = ({ config, onEnd }) => {
     // in-progress InterviewSession document already holds the full record).
     try {
       await api.post("/api/interview/save", {
-        mode: config.mode, difficulty: config.difficulty, role: config.role,
+        mode: config.mode, difficulty: config.difficulty, role: config.role, company: config.company,
         duration: config.duration, scores: finalScores, transcript: session.transcript,
         sessionId, questionCount: questionsAnswered,
         analysis: report ? {
           strengths: report.strengths, weaknesses: report.weaknesses,
           overall: report.summary, topicBreakdown: report.topicBreakdown,
+          technicalScore: report.technicalScore, communicationScore: report.communicationScore,
+          problemSolvingScore: report.problemSolvingScore, recommendedDsaTopics: report.recommendedDsaTopics,
         } : undefined,
       });
     } catch (e) {

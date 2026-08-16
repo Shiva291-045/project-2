@@ -6,6 +6,7 @@ import { Card, Badge, Button } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
 import api from "../../services/apiClient";
 import StreakCalendar from "./StreakCalendar";
+import ReadinessPanel from "./ReadinessPanel";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   TrendingUp, Target, Flame, Brain, Award, Clock, Code2,
@@ -134,6 +135,15 @@ export const Dashboard = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map((s, i) => <StatCard key={s.label} {...s} delay={i * 0.08} />)}
       </div>
+
+      {/* Placement readiness */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.5 }}
+        className="mb-8"
+      >
+        <ReadinessPanel />
+      </motion.div>
 
       {/* Activity streak calendar */}
       <motion.div

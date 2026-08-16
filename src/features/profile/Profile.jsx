@@ -18,11 +18,15 @@ export const Profile = () => {
   const isPremium = userProfile?.isPremium || false;
 
   const [form, setForm] = useState({
-    name:       userProfile?.name || user?.displayName || "",
-    targetRole: userProfile?.targetRole || "",
-    bio:        userProfile?.bio || "",
-    skills:     userProfile?.skills || [],
+    name:            userProfile?.name || user?.displayName || "",
+    targetRole:      userProfile?.targetRole || "",
+    targetCompanies: userProfile?.targetCompanies || [],
+    bio:             userProfile?.bio || "",
+    skills:          userProfile?.skills || [],
+    dsaLevel:        userProfile?.dsaLevel || "Beginner",
+    interviewLevel:  userProfile?.interviewLevel || "Medium",
   });
+  const [companyInput, setCompanyInput] = useState("");
   const [saving, setSaving]     = useState(false);
   const [saved,  setSaved]      = useState(false);
 
@@ -31,10 +35,21 @@ export const Profile = () => {
     skills: f.skills.includes(skill) ? f.skills.filter(s=>s!==skill) : [...f.skills, skill],
   }));
 
+  const addCompany = () => {
+    const name = companyInput.trim();
+    if (!name || form.targetCompanies.includes(name)) { setCompanyInput(""); return; }
+    setForm(f => ({ ...f, targetCompanies: [...f.targetCompanies, name] }));
+    setCompanyInput("");
+  };
+  const removeCompany = (name) => setForm(f => ({ ...f, targetCompanies: f.targetCompanies.filter(c => c !== name) }));
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put("/api/profile", form);
+      // NOTE: this was previously calling the wrong path (/api/profile, which
+      // doesn't exist — the real route is mounted under /api/auth) and was
+      // silently 404ing on every save.
+      await api.put("/api/auth/profile", form);
       updateProfile?.({ ...userProfile, ...form });
       toast.success("Profile saved!");
       setSaved(true);
@@ -150,6 +165,52 @@ export const Profile = () => {
                   {skill}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Target companies */}
+          <div className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.12)]">
+            <h3 className="font-display font-semibold text-white mb-2">Target Companies</h3>
+            <p className="text-xs text-gray-500 mb-4">Used to focus interview questions and resume keyword matching</p>
+            <div className="flex gap-2 mb-3">
+              <input
+                value={companyInput}
+                onChange={e => setCompanyInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCompany(); } }}
+                placeholder="e.g. Amazon, Google, Flipkart"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all"
+              />
+              <Button variant="secondary" onClick={addCompany} type="button">Add</Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {form.targetCompanies.map(c => (
+                <span key={c} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-brand-500/20 text-brand-300 border border-brand-500/40">
+                  {c}
+                  <button type="button" onClick={() => removeCompany(c)} className="text-brand-300/60 hover:text-white">×</button>
+                </span>
+              ))}
+              {!form.targetCompanies.length && <p className="text-xs text-gray-600">No companies added yet.</p>}
+            </div>
+          </div>
+
+          {/* Prep levels */}
+          <div className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.12)]">
+            <h3 className="font-display font-semibold text-white mb-5">Preparation Level</h3>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">DSA Level</label>
+                <select value={form.dsaLevel} onChange={e => setForm(f => ({ ...f, dsaLevel: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all">
+                  <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">Interview Difficulty</label>
+                <select value={form.interviewLevel} onChange={e => setForm(f => ({ ...f, interviewLevel: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all">
+                  <option>Easy</option><option>Medium</option><option>Hard</option>
+                </select>
+              </div>
             </div>
           </div>
 
