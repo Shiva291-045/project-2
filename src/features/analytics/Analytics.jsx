@@ -58,6 +58,60 @@ export const Analytics = () => {
     ];
   }, [history]);
 
+  // Trend narration — built ONLY from real per-category scores already
+  // stored in interview history (session.report.technicalScore etc., saved
+  // since the AI report was extended to include them). Never fabricates a
+  // trend when there isn't enough data to support one.
+  const trendInsight = useMemo(() => {
+    const withReport = history.filter(s => s.report && typeof s.report.technicalScore === "number");
+    if (!withReport.length) return null;
+
+    const CATS = [
+      { key: "technicalScore",      label: "Technical" },
+      { key: "communicationScore",  label: "Communication" },
+      { key: "problemSolvingScore", label: "Problem solving" },
+    ];
+    const avgOf = (arr, key) => {
+      const vals = arr.map(s => s.report[key]).filter(v => typeof v === "number");
+      return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
+    };
+
+    // Weakest category from the most recent sessions (up to 5)
+    const recent = withReport.slice(0, 5);
+    const recentAverages = CATS.map(c => ({ ...c, avg: avgOf(recent, c.key) })).filter(c => c.avg != null);
+    const weakest = recentAverages.length ? [...recentAverages].sort((a,b) => a.avg - b.avg)[0] : null;
+
+    // Most frequently recommended DSA topic across recent reports
+    const topicCounts = {};
+    recent.forEach(s => (s.report.recommendedDsaTopics || []).forEach(t => { topicCounts[t] = (topicCounts[t] || 0) + 1; }));
+    const topTopic = Object.entries(topicCounts).sort((a,b) => b[1]-a[1])[0]?.[0];
+
+    let trendSentence = "";
+    if (withReport.length >= 4) {
+      const older = withReport.slice(Math.ceil(withReport.length/2));
+      CATS.forEach(c => {
+        const recentAvg = avgOf(recent, c.key);
+        const olderAvg = avgOf(older, c.key);
+        if (recentAvg != null && olderAvg != null) {
+          const delta = Math.round(recentAvg - olderAvg);
+          if (Math.abs(delta) >= 5 && !trendSentence) {
+            trendSentence = `Your ${c.label.toLowerCase()} score has ${delta > 0 ? "improved" : "dropped"} by ${Math.abs(delta)} points over your recent sessions. `;
+          }
+        }
+      });
+    }
+
+    const weakestSentence = weakest
+      ? `${trendSentence ? "" : "Based on your recent sessions, "}${weakest.label} is currently your weakest area at ${Math.round(weakest.avg)}%.`
+      : "";
+    const topicSentence = topTopic ? ` The AI has repeatedly flagged ${topTopic} as worth revisiting.` : "";
+
+    return {
+      text: (trendSentence + weakestSentence + topicSentence).trim(),
+      sessionCount: withReport.length,
+    };
+  }, [history]);
+
   const totalSessions = apiStats?.totalInterviews || history.length;
   const avgScore      = apiStats?.avgScore || (scoreData.length ? Math.round(scoreData.reduce((a,s)=>a+s.score,0)/scoreData.length) : 0);
   const xp            = apiStats?.xp || (totalSessions * 50);
@@ -91,6 +145,18 @@ export const Analytics = () => {
           </motion.div>
         ))}
       </div>
+
+      {/* Trend narration — real, computed insight, not decoration */}
+      {trendInsight?.text && (
+        <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.22 }}
+          className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.15)] mb-8 flex items-start gap-3">
+          <Zap className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-gray-300 leading-relaxed">{trendInsight.text}</p>
+            <p className="text-xs text-gray-600 mt-1">Based on your last {trendInsight.sessionCount} scored interview{trendInsight.sessionCount === 1 ? "" : "s"}</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Charts */}
       <div className="grid lg:grid-cols-3 gap-6 mb-6">

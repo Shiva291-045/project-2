@@ -83,6 +83,13 @@ const getResumeContext = async (userId) => {
   }
 };
 
+// Trims each qa entry down to what the Results screen actually needs
+// (question-level feedback) — drops internal-only bookkeeping.
+const toQaLog = (qa) => qa.map(q => ({
+  question: q.question, answer: q.answer, topic: q.topic,
+  difficulty: q.difficulty, score: q.score, feedback: q.feedback,
+}));
+
 /* ─── POST /api/interview/session/start ─────────────────────────────────────
    body: { mode, role, difficulty, duration (minutes) }
 ──────────────────────────────────────────────────────────────────────────── */
@@ -205,6 +212,7 @@ export const submitAnswer = async (req, res) => {
         score:     current.score,
         feedback:  current.feedback,
         report,
+        qa:        toQaLog(session.qa),
         sessionId: session._id,
       }, "Interview complete.");
     }
@@ -294,7 +302,7 @@ export const endSession = async (req, res) => {
     session.report      = report;
     await session.save();
 
-    return resp.success(res, { done: true, report, sessionId: session._id }, "Interview ended.");
+    return resp.success(res, { done: true, report, qa: toQaLog(session.qa), sessionId: session._id }, "Interview ended.");
   } catch (err) {
     console.error("[Interview Session] endSession error:", err.message);
     return resp.error(res, "Failed to end interview session.", 500);

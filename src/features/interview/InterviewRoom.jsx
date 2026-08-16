@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../hooks/useAuth";
@@ -8,11 +8,11 @@ import {
   Mic, MicOff, Send, StopCircle, RotateCcw, CheckCircle,
   AlertTriangle, Clock, Brain, MessageSquare, Code2, Users,
   TrendingUp, ChevronRight, Star, Crown, Sparkles, ChevronDown,
-  Wifi, WifiOff, RefreshCw,
+  Wifi, WifiOff, RefreshCw, Target,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { withRetry } from "../../services/apiClient";
-import { getWeakTopics } from "../../utils/dsaRecommendations";
+import { getWeakTopics, getRecommendedProblems } from "../../utils/dsaRecommendations";
 
 /* ─── Interview Modes ──────────────────────────────────────────── */
 const MODES = [
@@ -432,7 +432,7 @@ const InterviewSession = ({ config, onEnd }) => {
   useEffect(() => { scoresRef.current = scores; }, [scores]);
   useEffect(() => { questionCountRef.current = questionCount; }, [questionCount]);
 
-  const finalize = useCallback(async (finalMessages, finalScores, report, questionsAnswered) => {
+  const finalize = useCallback(async (finalMessages, finalScores, report, questionsAnswered, qaLog) => {
     if (endingRef.current) return;
     endingRef.current = true;
     clearInterval(timerRef.current);
@@ -446,6 +446,7 @@ const InterviewSession = ({ config, onEnd }) => {
       completedAt: new Date().toISOString(),
       transcript: finalMessages.map(m => `${m.role === "user" ? "You" : "AI"}: ${m.content}`).join("\n\n"),
       report: report || null,
+      questionLog: qaLog || null,
     };
     saveHistory(session);
 
@@ -491,9 +492,9 @@ const InterviewSession = ({ config, onEnd }) => {
               (async () => {
                 try {
                   const result = await endInterviewSession(data.sessionId);
-                  finalize(messagesRef.current, scoresRef.current, result?.report, questionCountRef.current);
+                  finalize(messagesRef.current, scoresRef.current, result?.report, questionCountRef.current, result?.qa);
                 } catch {
-                  finalize(messagesRef.current, scoresRef.current, null, questionCountRef.current);
+                  finalize(messagesRef.current, scoresRef.current, null, questionCountRef.current, null);
                 }
               })();
               return 0;
@@ -536,7 +537,7 @@ const InterviewSession = ({ config, onEnd }) => {
       setMessages(nextMessages);
 
       if (result.done) {
-        finalize(nextMessages, newScores, result.report, questionCount);
+        finalize(nextMessages, newScores, result.report, questionCount, result.qa);
       } else {
         setQuestionCount(q => q + 1);
       }
@@ -553,14 +554,14 @@ const InterviewSession = ({ config, onEnd }) => {
 
   const handleEnd = useCallback(() => {
     if (endingRef.current) return;
-    if (!sessionId) { finalize(messages, scores, null, questionCount); return; }
+    if (!sessionId) { finalize(messages, scores, null, questionCount, null); return; }
     (async () => {
       try {
         const result = await endInterviewSession(sessionId);
-        finalize(messages, scores, result?.report, questionCount);
+        finalize(messages, scores, result?.report, questionCount, result?.qa);
       } catch (err) {
         console.warn("[Interview] endSession failed, finalizing locally:", err.message);
-        finalize(messages, scores, null, questionCount);
+        finalize(messages, scores, null, questionCount, null);
       }
     })();
     // eslint-disable-next-line
@@ -686,21 +687,54 @@ const InterviewSession = ({ config, onEnd }) => {
 };
 
 /* ─── Results ───────────────────────────────────────────────────── */
+const ScoreBar = ({ label, value }) => (
+  <div className="flex items-center gap-3">
+    <span className="text-xs text-gray-400 w-28 flex-shrink-0">{label}</span>
+    <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
+      {value != null && (
+        <motion.div
+          initial={{ width: 0 }} animate={{ width: `${value}%` }} transition={{ duration: 0.8, ease: "easeOut" }}
+          className={`h-full rounded-full ${value >= 70 ? "bg-green-500" : value >= 40 ? "bg-amber-500" : "bg-red-500"}`}
+        />
+      )}
+    </div>
+    <span className="text-xs font-semibold text-gray-300 w-10 text-right flex-shrink-0">{value != null ? `${value}%` : "—"}</span>
+  </div>
+);
+
 const ResultsScreen = ({ session, onRestart }) => {
   const navigate = useNavigate();
-  const avg = session.scores?.length
+  const [showQuestions, setShowQuestions] = useState(false);
+  const report = session.report;
+
+  // Prefer the AI-graded overall score (weighted, holistic) when the report
+  // is available; fall back to the plain per-question average otherwise —
+  // never invent a number that wasn't actually computed.
+  const avg = report?.overallScore ?? (session.scores?.length
     ? Math.round(session.scores.reduce((a,b)=>a+b,0)/session.scores.length*10)
-    : 0;
+    : 0);
 
   const grade = avg >= 85 ? { label: "Excellent!", color: "text-neon-cyan", bg: "from-neon-cyan/20 to-green-500/10" }
     : avg >= 70 ? { label: "Good Job!", color: "text-brand-300", bg: "from-brand-500/20 to-neon-blue/10" }
     : avg >= 55 ? { label: "Keep Practicing", color: "text-amber-400", bg: "from-amber-500/20 to-orange-500/10" }
     : { label: "Needs Improvement", color: "text-red-400", bg: "from-red-500/20 to-rose-500/10" };
 
+  // DSA recommendations connect directly to real, unsolved problems from
+  // the existing 450-question set — not just a topic name with nowhere to go.
+  const dsaSuggestions = useMemo(() => {
+    if (!report?.recommendedDsaTopics?.length) return [];
+    try {
+      const solvedIds = new Set(JSON.parse(localStorage.getItem("prepai_solved_problems") || "[]"));
+      return report.recommendedDsaTopics.slice(0, 2).map(topic => ({
+        topic, problems: getRecommendedProblems(topic, solvedIds, 2),
+      }));
+    } catch { return report.recommendedDsaTopics.map(topic => ({ topic, problems: [] })); }
+  }, [report]);
+
   return (
     <PageWrapper>
-      <div className="max-w-2xl mx-auto text-center">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="mb-8">
+      <div className="max-w-2xl mx-auto">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="mb-8 text-center">
           <motion.div animate={{ y: [0,-8,0] }} transition={{ duration:3, repeat:Infinity }}>
             <img src="/logo.png" alt="PrepAI" className="w-20 h-20 mx-auto rounded-2xl shadow-brand mb-6" />
           </motion.div>
@@ -710,7 +744,7 @@ const ResultsScreen = ({ session, onRestart }) => {
 
         <motion.div
           initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}
-          className={`glass rounded-3xl p-10 border border-[rgba(155,93,229,0.2)] bg-gradient-to-br ${grade.bg} mb-6`}
+          className={`glass rounded-3xl p-10 border border-[rgba(155,93,229,0.2)] bg-gradient-to-br ${grade.bg} mb-6 text-center`}
         >
           <p className={`font-display text-7xl font-extrabold ${grade.color} mb-2`}>{avg}%</p>
           <p className={`text-xl font-semibold ${grade.color} mb-4`}>{grade.label}</p>
@@ -728,8 +762,106 @@ const ResultsScreen = ({ session, onRestart }) => {
           </div>
         </motion.div>
 
+        {report && (
+          <>
+            {/* Category breakdown */}
+            <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.25 }}
+              className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.12)] mb-4 text-left">
+              <h3 className="font-display font-bold text-white mb-4">Performance Breakdown</h3>
+              <div className="space-y-3">
+                <ScoreBar label="Technical"      value={report.technicalScore} />
+                <ScoreBar label="Communication"  value={report.communicationScore} />
+                <ScoreBar label="Problem Solving" value={report.problemSolvingScore} />
+              </div>
+              {report.summary && <p className="text-sm text-gray-400 mt-5 leading-relaxed">{report.summary}</p>}
+            </motion.div>
+
+            {/* Strengths / Weaknesses */}
+            {(report.strengths?.length > 0 || report.weaknesses?.length > 0) && (
+              <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
+                className="grid sm:grid-cols-2 gap-4 mb-4 text-left">
+                {report.strengths?.length > 0 && (
+                  <div className="glass rounded-2xl p-5 border border-green-500/20">
+                    <h4 className="text-sm font-semibold text-green-400 mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Strengths</h4>
+                    <ul className="space-y-2">
+                      {report.strengths.map((s, i) => <li key={i} className="text-xs text-gray-400 leading-relaxed">• {s}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {report.weaknesses?.length > 0 && (
+                  <div className="glass rounded-2xl p-5 border border-red-500/20">
+                    <h4 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> Weaknesses</h4>
+                    <ul className="space-y-2">
+                      {report.weaknesses.map((s, i) => <li key={i} className="text-xs text-gray-400 leading-relaxed">• {s}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Suggestions */}
+            {report.suggestions?.length > 0 && (
+              <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.33 }}
+                className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)] mb-4 text-left">
+                <h4 className="text-sm font-semibold text-white mb-3">Suggestions</h4>
+                <ul className="space-y-2">
+                  {report.suggestions.map((s, i) => <li key={i} className="text-xs text-gray-400 leading-relaxed">• {s}</li>)}
+                </ul>
+              </motion.div>
+            )}
+
+            {/* DSA recommendations, linked to real unsolved problems */}
+            {dsaSuggestions.length > 0 && (
+              <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.36 }}
+                className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)] mb-4 text-left">
+                <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2"><Code2 className="w-4 h-4 text-neon-purple" /> Recommended DSA Practice</h4>
+                <div className="space-y-3">
+                  {dsaSuggestions.map(({ topic, problems }) => (
+                    <div key={topic}>
+                      <p className="text-xs font-medium text-gray-300 mb-1.5">{topic}</p>
+                      {problems.length ? (
+                        <ul className="space-y-1">
+                          {problems.map(p => <li key={p.id} className="text-xs text-gray-500">• {p.title}</li>)}
+                        </ul>
+                      ) : <p className="text-xs text-gray-600">You've solved all the {topic} problems in the set — nice work.</p>}
+                    </div>
+                  ))}
+                </div>
+                <Button variant="secondary" size="sm" className="mt-4" onClick={() => navigate("/coding")}>
+                  Practice on Coding page
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Question-level feedback */}
+            {session.questionLog?.length > 0 && (
+              <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.39 }}
+                className="glass rounded-2xl p-5 border border-[rgba(155,93,229,0.12)] mb-6 text-left">
+                <button type="button" onClick={() => setShowQuestions(s => !s)} className="w-full flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-white">Question-by-Question Feedback</h4>
+                  <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${showQuestions ? "rotate-90" : ""}`} />
+                </button>
+                {showQuestions && (
+                  <div className="mt-4 space-y-4">
+                    {session.questionLog.map((q, i) => (
+                      <div key={i} className="pb-4 border-b border-[rgba(155,93,229,0.08)] last:border-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <p className="text-xs font-medium text-white flex-1">Q{i+1}. {q.question}</p>
+                          {q.score != null && <span className="text-xs font-semibold text-brand-300 flex-shrink-0">{q.score}/10</span>}
+                        </div>
+                        <p className="text-xs text-gray-500 mb-1.5">{q.topic} · {q.difficulty}</p>
+                        {q.feedback && <p className="text-xs text-gray-400 leading-relaxed">{q.feedback}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </>
+        )}
+
         <motion.div
-          initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
+          initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.42 }}
           className="flex flex-col sm:flex-row gap-3"
         >
           <Button variant="primary" size="lg" className="flex-1 shadow-brand" onClick={onRestart}>
