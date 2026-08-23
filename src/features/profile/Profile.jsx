@@ -4,7 +4,7 @@ import { PageWrapper } from "../../components/PageWrapper";
 import { Button, Alert } from "../../components/ui";
 import { useAuth } from "../../hooks/useAuth";
 import api from "../../services/apiClient";
-import { User, Mail, Briefcase, Code2, Save, Crown, Shield, Sparkles, CheckCircle } from "lucide-react";
+import { User, Mail, Briefcase, Code2, Save, Crown, Shield, Sparkles, CheckCircle, Target, Calendar, Clock, Trophy } from "lucide-react";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
@@ -47,6 +47,106 @@ export const Profile = () => {
     return () => { cancelled = true; };
   }, []);
   const companyInfoFor = (name) => knownCompanies.find(c => c.name.toLowerCase() === name.toLowerCase());
+
+  /* ─── Career Goal ────────────────────────────────────────────────────────
+   * Uses the new dedicated career-goal endpoints (not /api/auth/profile).
+   * Kept as its own section/state, additive to the existing form above —
+   * the existing Save Changes button and /api/auth/profile flow are
+   * untouched. The backend keeps the flat targetRole/targetCompanies
+   * fields above in sync whenever a career goal is saved, so after a
+   * successful save here we refresh the shared userProfile via
+   * updateProfile() so the Basic Information card reflects it immediately.
+   *
+   * EXPERIENCE_LEVELS/GOAL_STATUSES mirror the enums exported from
+   * server/models/User.js — kept in sync manually the same way other fixed
+   * option lists in this app already are (e.g. DIFFICULTIES in
+   * InterviewRoom.jsx), since there's no dedicated endpoint for enum
+   * metadata and adding one for two small fixed lists isn't worth a new
+   * round trip.
+   */
+  const EXPERIENCE_LEVELS = ["Fresher", "0-2 years", "2-5 years", "5-8 years", "8+ years"];
+  const GOAL_STATUSES     = ["active", "paused", "achieved", "abandoned"];
+
+  const [activeGoal,     setActiveGoal]     = useState(null);   // existing goal from the server, or null
+  const [readiness,      setReadiness]      = useState(null);
+  const [goalLoading,    setGoalLoading]    = useState(true);
+  const [goalSaving,     setGoalSaving]     = useState(false);
+  const [goalForm, setGoalForm] = useState({
+    targetRole: "", targetCompanies: [], experienceLevel: "Fresher",
+    preferredLanguage: "", interviewDate: "", dailyPrepMinutes: 60, status: "active",
+  });
+  const [goalCompanyInput, setGoalCompanyInput] = useState("");
+
+  const loadActiveGoal = async () => {
+    setGoalLoading(true);
+    try {
+      const { data } = await api.get("/api/auth/career-goal/active");
+      const goal = data?.data?.goal || null;
+      setActiveGoal(goal);
+      setReadiness(data?.data?.readiness || null);
+      if (goal) {
+        setGoalForm({
+          targetRole: goal.targetRole || "",
+          targetCompanies: goal.targetCompanies || [],
+          experienceLevel: goal.experienceLevel || "Fresher",
+          preferredLanguage: goal.preferredLanguage || "",
+          interviewDate: goal.interviewDate ? goal.interviewDate.slice(0, 10) : "",
+          dailyPrepMinutes: goal.dailyPrepMinutes ?? 60,
+          status: goal.status || "active",
+        });
+      } else {
+        // No goal yet — default the form's role/companies from whatever's
+        // already in the basic profile fields, as a sensible starting point.
+        setGoalForm(f => ({ ...f, targetRole: userProfile?.targetRole || "", targetCompanies: userProfile?.targetCompanies || [] }));
+      }
+    } catch {
+      // Non-fatal — the card shows its own inline error state below
+    }
+    setGoalLoading(false);
+  };
+  useEffect(() => { loadActiveGoal(); /* eslint-disable-line */ }, []);
+
+  const addGoalCompany = () => {
+    const name = goalCompanyInput.trim();
+    if (!name || goalForm.targetCompanies.includes(name)) { setGoalCompanyInput(""); return; }
+    setGoalForm(f => ({ ...f, targetCompanies: [...f.targetCompanies, name] }));
+    setGoalCompanyInput("");
+  };
+  const removeGoalCompany = (name) => setGoalForm(f => ({ ...f, targetCompanies: f.targetCompanies.filter(c => c !== name) }));
+
+  const handleSaveGoal = async () => {
+    if (!goalForm.targetRole.trim()) { toast.error("Target role is required for your career goal."); return; }
+    setGoalSaving(true);
+    try {
+      const payload = {
+        targetRole: goalForm.targetRole.trim(),
+        targetCompanies: goalForm.targetCompanies,
+        experienceLevel: goalForm.experienceLevel,
+        preferredLanguage: goalForm.preferredLanguage.trim(),
+        interviewDate: goalForm.interviewDate || null,
+        dailyPrepMinutes: Number(goalForm.dailyPrepMinutes),
+        ...(activeGoal ? { status: goalForm.status } : {}),
+      };
+
+      const { data } = activeGoal
+        ? await api.put(`/api/auth/career-goal/${activeGoal._id}`, payload)
+        : await api.post("/api/auth/career-goal", payload);
+
+      const savedGoal = data?.data?.goal;
+      setActiveGoal(savedGoal?.status === "active" ? savedGoal : null);
+
+      // Keep the Basic Information card's targetRole/targetCompanies in
+      // sync immediately, matching what the backend already synced.
+      updateProfile?.({ ...userProfile, targetRole: payload.targetRole, targetCompanies: payload.targetCompanies });
+      setForm(f => ({ ...f, targetRole: payload.targetRole, targetCompanies: payload.targetCompanies }));
+
+      toast.success(activeGoal ? "Career goal updated!" : "Career goal set!");
+      loadActiveGoal();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to save career goal.");
+    }
+    setGoalSaving(false);
+  };
 
   const toggleSkill = (skill) => setForm(f => ({
     ...f,
@@ -165,6 +265,115 @@ export const Profile = () => {
                 rows={3}
                 className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 resize-none transition-all" />
             </div>
+          </div>
+
+          {/* Career Goal */}
+          <div className="glass rounded-2xl p-6 border border-[rgba(155,93,229,0.12)]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-display font-semibold text-white flex items-center gap-2">
+                <Target className="w-4 h-4 text-neon-purple" /> Career Goal
+              </h3>
+              {activeGoal && (
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-500/15 text-green-400">Active</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mb-5">
+              What you're currently preparing for — drives your interview questions, resume matching, and readiness score. Saving this also updates your Target Role and Target Companies above.
+            </p>
+
+            {goalLoading ? (
+              <div className="py-8 text-center text-sm text-gray-500">Loading your career goal…</div>
+            ) : (
+              <>
+                {readiness && (
+                  <div className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                    <Trophy className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <p className="text-xs text-gray-300">
+                      Current readiness for this goal:{" "}
+                      <span className="font-semibold text-white">
+                        {readiness.overallReadiness != null ? `${readiness.overallReadiness}%` : "not enough data yet"}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid sm:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Target Role</label>
+                    <input value={goalForm.targetRole} onChange={e=>setGoalForm(f=>({...f,targetRole:e.target.value}))}
+                      placeholder="e.g. Backend Developer"
+                      className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Experience Level</label>
+                    <select value={goalForm.experienceLevel} onChange={e=>setGoalForm(f=>({...f,experienceLevel:e.target.value}))}
+                      className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all">
+                      {EXPERIENCE_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Preferred Language</label>
+                    <input value={goalForm.preferredLanguage} onChange={e=>setGoalForm(f=>({...f,preferredLanguage:e.target.value}))}
+                      placeholder="e.g. JavaScript, Python"
+                      className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Daily Prep Time (minutes)</label>
+                    <div className="relative">
+                      <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <input type="number" min={0} max={1440} value={goalForm.dailyPrepMinutes}
+                        onChange={e=>setGoalForm(f=>({...f,dailyPrepMinutes:e.target.value}))}
+                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Interview Date <span className="text-gray-600 font-normal">(optional)</span></label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <input type="date" value={goalForm.interviewDate}
+                        onChange={e=>setGoalForm(f=>({...f,interviewDate:e.target.value}))}
+                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all" />
+                    </div>
+                  </div>
+                  {activeGoal && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Goal Status</label>
+                      <select value={goalForm.status} onChange={e=>setGoalForm(f=>({...f,status:e.target.value}))}
+                        className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white focus:outline-none focus:border-neon-purple/50 transition-all">
+                        {GOAL_STATUSES.map(s => <option key={s} value={s}>{s[0].toUpperCase()+s.slice(1)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Target Companies</label>
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      value={goalCompanyInput}
+                      onChange={e => setGoalCompanyInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addGoalCompany(); } }}
+                      placeholder="e.g. Amazon, Google, Flipkart"
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-surface-elevated border border-[rgba(155,93,229,0.15)] text-white placeholder-gray-600 focus:outline-none focus:border-neon-purple/50 transition-all"
+                    />
+                    <Button variant="secondary" onClick={addGoalCompany} type="button">Add</Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {goalForm.targetCompanies.map(c => (
+                      <span key={c} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-brand-500/20 text-brand-300 border border-brand-500/40">
+                        {c}
+                        <button type="button" onClick={() => removeGoalCompany(c)} className="text-brand-300/60 hover:text-white">×</button>
+                      </span>
+                    ))}
+                    {!goalForm.targetCompanies.length && <p className="text-xs text-gray-600">No companies added yet.</p>}
+                  </div>
+                </div>
+
+                <Button variant="primary" onClick={handleSaveGoal} disabled={goalSaving} className="mt-5">
+                  <Target className="w-4 h-4" /> {goalSaving ? "Saving…" : activeGoal ? "Update Career Goal" : "Set Career Goal"}
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Skills */}

@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import { signToken } from "../utils/jwt.js";
 import { sendOTPEmail } from "../utils/email.js";
 import * as resp from "../utils/apiResponse.js";
+import { getReadiness } from "../utils/readinessService.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const createToken = (user) =>
@@ -399,6 +400,178 @@ export const updateProfile = async (req, res) => {
       "Failed to update profile.",
       500
     );
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CAREER GOAL
+   Represents what the user is currently preparing for. Embedded on the User
+   document (see careerGoalSchema in models/User.js) — reuses the existing
+   auth/profile domain rather than a new collection. Input validation runs at
+   the route layer (careerGoalCreateRules/careerGoalUpdateRules in
+   middleware/validate.js), matching the same express-validator pattern
+   already used for register/login — not a second validation style. Readiness
+   score is always computed live from readinessService.js, never stored, so
+   it can't drift from the real underlying data.
+═══════════════════════════════════════════════════════════════════════════════ */
+
+// Builds a goal subdocument's field set from the (already-validated) request
+// body, applying only the keys actually provided so partial updates don't
+// clobber unspecified fields with schema defaults.
+const buildGoalFields = (body, { isCreate }) => {
+  const fields = {};
+  if (body.targetRole !== undefined)        fields.targetRole = body.targetRole.trim();
+  if (body.targetCompanies !== undefined)   fields.targetCompanies = body.targetCompanies.map(c => c.trim()).filter(Boolean);
+  if (body.experienceLevel !== undefined)   fields.experienceLevel = body.experienceLevel;
+  if (body.preferredLanguage !== undefined) fields.preferredLanguage = body.preferredLanguage.trim();
+  if (body.interviewDate !== undefined)     fields.interviewDate = body.interviewDate ? new Date(body.interviewDate) : null;
+  if (body.dailyPrepMinutes !== undefined)  fields.dailyPrepMinutes = Number(body.dailyPrepMinutes);
+  if (body.status !== undefined)            fields.status = body.status;
+  if (isCreate && fields.status === undefined) fields.status = "active";
+  return fields;
+};
+
+// Demotes every OTHER currently-"active" goal on the user to "paused", so at
+// most one goal is ever active at a time. Mutates `user` in place; caller
+// still needs to save().
+const demoteOtherActiveGoals = (user, exceptGoalId) => {
+  user.careerGoals.forEach(g => {
+    if (g.status === "active" && String(g._id) !== String(exceptGoalId)) {
+      g.status = "paused";
+    }
+  });
+};
+
+// Keeps the legacy flat User.targetRole/targetCompanies fields in sync with
+// whichever goal is active, so existing consumers of those fields (Interview
+// setup pre-fill, Resume company panel) keep working unchanged.
+const syncFlatProfileFields = (user, goal) => {
+  user.targetRole = goal.targetRole;
+  user.targetCompanies = goal.targetCompanies;
+};
+
+// ── POST /api/auth/career-goal ──────────────────────────────────────────────
+// Create a new career goal. Automatically becomes the active goal — any
+// previously-active goal is demoted to "paused" (not deleted; goal history
+// is preserved for future personalization use).
+export const createCareerGoal = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return resp.error(res, "User not found.", 404);
+
+    const fields = buildGoalFields(req.body, { isCreate: true });
+    demoteOtherActiveGoals(user, null);
+    user.careerGoals.push(fields);
+    const goal = user.careerGoals[user.careerGoals.length - 1];
+    syncFlatProfileFields(user, goal);
+
+    await user.save();
+
+    return resp.success(res, { goal }, "Career goal created and set as active.", 201);
+  } catch (err) {
+    console.error("Create career goal error:", err);
+    return resp.error(res, "Failed to create career goal.", 500);
+  }
+};
+
+// ── PUT /api/auth/career-goal/:goalId ───────────────────────────────────────
+// Update an existing career goal (partial update — only provided fields
+// change). If `status` is set to "active", any other active goal is demoted.
+export const updateCareerGoal = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return resp.error(res, "User not found.", 404);
+
+    const goal = user.careerGoals.id(req.params.goalId);
+    if (!goal) return resp.error(res, "Career goal not found.", 404);
+
+    const fields = buildGoalFields(req.body, { isCreate: false });
+    Object.assign(goal, fields);
+
+    if (goal.status === "active") {
+      demoteOtherActiveGoals(user, goal._id);
+      syncFlatProfileFields(user, goal);
+    }
+
+    await user.save();
+
+    return resp.success(res, { goal }, "Career goal updated.");
+  } catch (err) {
+    console.error("Update career goal error:", err);
+    return resp.error(res, "Failed to update career goal.", 500);
+  }
+};
+
+// ── PATCH /api/auth/career-goal/:goalId/activate ────────────────────────────
+// Switch which goal is the active one — demotes whichever goal was active
+// before, activates the requested one, and syncs the legacy flat profile
+// fields to match.
+export const activateCareerGoal = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return resp.error(res, "User not found.", 404);
+
+    const goal = user.careerGoals.id(req.params.goalId);
+    if (!goal) return resp.error(res, "Career goal not found.", 404);
+
+    demoteOtherActiveGoals(user, goal._id);
+    goal.status = "active";
+    syncFlatProfileFields(user, goal);
+
+    await user.save();
+
+    return resp.success(res, { goal }, "Career goal activated.");
+  } catch (err) {
+    console.error("Activate career goal error:", err);
+    return resp.error(res, "Failed to activate career goal.", 500);
+  }
+};
+
+// ── GET /api/auth/career-goal/active ────────────────────────────────────────
+// Returns the currently active goal, if any, with a LIVE readiness score
+// merged in (computed from readinessService.js — never a stored/stale
+// value). Returns { goal: null } — not an error — when no goal is set yet,
+// so the frontend can show a real empty state instead of treating it as a
+// failure.
+export const getActiveCareerGoal = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return resp.error(res, "User not found.", 404);
+
+    const goal = user.careerGoals.find(g => g.status === "active") || null;
+    if (!goal) {
+      return resp.success(res, { goal: null, readiness: null }, "No active career goal set yet.");
+    }
+
+    let readiness = null;
+    try {
+      readiness = await getReadiness(req.user._id);
+    } catch (e) {
+      console.warn("[Career Goal] readiness lookup failed:", e.message);
+    }
+
+    return resp.success(res, { goal, readiness }, "Active career goal retrieved.");
+  } catch (err) {
+    console.error("Get active career goal error:", err);
+    return resp.error(res, "Failed to fetch active career goal.", 500);
+  }
+};
+
+// ── GET /api/auth/career-goal ────────────────────────────────────────────────
+// Lists all of the user's career goals (active + paused/achieved/abandoned
+// history), most recently updated first. Not currently used by any UI beyond
+// the active one, but exposed now so a future goal-history view or the
+// personalization system doesn't need a new endpoint for it.
+export const listCareerGoals = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return resp.error(res, "User not found.", 404);
+
+    const goals = [...user.careerGoals].sort((a, b) => b.updatedAt - a.updatedAt);
+    return resp.success(res, { goals });
+  } catch (err) {
+    console.error("List career goals error:", err);
+    return resp.error(res, "Failed to fetch career goals.", 500);
   }
 };
 

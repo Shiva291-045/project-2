@@ -1,6 +1,36 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
+// ── Career Goal ──────────────────────────────────────────────────────────────
+// Represents what the user is CURRENTLY preparing for. Embedded as a
+// subdocument array on User (not a separate top-level collection) — a user's
+// goals are inherently owned by/scoped to that user, or already flat fields
+// (targetRole/targetCompanies) on User, so this keeps ownership/auth simple
+// and reuses the existing User-centric access pattern rather than
+// introducing a second collection + its own indexing/query surface.
+//
+// Exactly one goal may have status "active" at a time (enforced in
+// authController.js, not by a redundant boolean field here). Readiness score
+// is deliberately NOT stored on the goal — it's computed live from
+// server/utils/readinessService.js (the existing, single source of truth for
+// readiness) whenever a goal is fetched, so it can never drift out of sync
+// with the real underlying DSA/interview/resume/streak data.
+export const EXPERIENCE_LEVELS = ["Fresher", "0-2 years", "2-5 years", "5-8 years", "8+ years"];
+export const GOAL_STATUSES     = ["active", "paused", "achieved", "abandoned"];
+
+const careerGoalSchema = new mongoose.Schema(
+  {
+    targetRole:        { type: String, required: true, trim: true, maxlength: 100 },
+    targetCompanies:   [{ type: String, trim: true, maxlength: 100 }],
+    experienceLevel:   { type: String, enum: EXPERIENCE_LEVELS, default: "Fresher" },
+    preferredLanguage: { type: String, trim: true, maxlength: 50, default: "" },
+    interviewDate:     { type: Date, default: null }, // optional
+    dailyPrepMinutes:  { type: Number, min: 0, max: 1440, default: 60 },
+    status:            { type: String, enum: GOAL_STATUSES, default: "active" },
+  },
+  { timestamps: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name:          { type: String, required: true, trim: true, minlength: 2, maxlength: 50 },
@@ -15,6 +45,13 @@ const userSchema = new mongoose.Schema(
     bio:           { type: String, default: "" },
     dsaLevel:        { type: String, enum: ["Beginner", "Intermediate", "Advanced"], default: "Beginner" },
     interviewLevel:  { type: String, enum: ["Easy", "Medium", "Hard"], default: "Medium" },
+    // Career goals — see careerGoalSchema above. `targetRole`/`targetCompanies`
+    // above are kept as-is (not removed/renamed) for backward compatibility
+    // with existing consumers (Interview setup pre-fill, Resume company
+    // panel, Profile page) — they're kept in sync with whichever goal below
+    // is currently "active" by the career-goal controller, so nothing that
+    // already reads those flat fields needs to change.
+    careerGoals:   [careerGoalSchema],
     // OTP fields
     otp:           { type: String, select: false },
     otpExpires:    { type: Date,   select: false },
